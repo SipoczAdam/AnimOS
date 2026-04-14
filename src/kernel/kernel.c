@@ -1,6 +1,6 @@
 void kernel_main() {
     char* video_memory = (char*) 0xB8000;
-    const char* str = "OS Booted Successfully!";
+    const char* str = "OS Booted Successfully! OS version: AnimOS Experience v1.0";
     for (int i = 0; str[i] != '\0'; i++) {
         video_memory[i * 2] = str[i];
         video_memory[i * 2 + 1] = 0x0D;
