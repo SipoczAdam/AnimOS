@@ -1,0 +1,12 @@
+# Fordítás során keletkező tárgykódok
+*.o
+*.bin
+
+# A végső ISO fájl
+*.iso
+
+# GRUB építéséhez használt ideiglenes mappa
+isodir/
+
+# Docker build során esetleg keletkező logok
+*.log
