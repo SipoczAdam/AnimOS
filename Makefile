@@ -20,9 +20,8 @@ link:
 iso:
 	cp $(BUILDDIR)/kernel.bin isodir/boot/
 	cp $(CONFIGDIR)/grub.cfg isodir/boot/grub/
-	rm -rf isodir/boot/grub/themes
-	mkdir -p isodir/boot/grub/themes/grub
-	cp -r $(ASSETDIR)/grub-theme/* isodir/boot/grub/themes/grub/
+	mkdir -p isodir/boot/grub/themes/grub-theme
+	cp -r $(ASSETDIR)/grub-theme/* isodir/boot/grub/themes/grub-theme/
 	grub-mkrescue -o animos.iso isodir
 
 clean:
