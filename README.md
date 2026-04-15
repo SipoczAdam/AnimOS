@@ -2,5 +2,5 @@
 ```bash
 docker run --rm -v .:/osdev animos-builder make clean all
 
-qemu-system-i386 -cdrom animos.iso -m 1G
+qemu-system-x86_64 -cdrom animos.iso -m 1G
 ```
