@@ -41,3 +41,7 @@ iso:
 # Clean
 clean:
 	rm -rf $(BUILDDIR) isodir animos.iso
+
+# Run
+run:
+	qemu-system-x86_64 -cdrom animos.iso -m 1G
