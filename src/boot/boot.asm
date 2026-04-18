@@ -17,6 +17,12 @@ header_start:
     dd 768                       ; height
     dd 32                        ; depth
 
+    ; Module alignment
+    align 8
+    dw 6
+    dw 0
+    dd 8
+
     ; End tag
     align 8
     dw 0
@@ -30,19 +36,18 @@ global _start
 extern kernel_main
 
 _start:
+    ; Stack beállítása
     mov esp, stack_top
     
-    ; Megőrizzük az EBX-et (Multiboot info)
-    push ebx
+    ; Multiboot info mentése (ebx-ben jön)
+    mov [multiboot_ptr], ebx
 
     call check_cpuid
     call check_long_mode
-
     call setup_page_tables
     call enable_paging
 
     lgdt [gdt64.pointer]
-    pop ebx ; Visszaszerezzük az EBX-et
     jmp gdt64.code:long_mode_start
 
 check_cpuid:
@@ -78,119 +83,60 @@ check_long_mode:
     jmp error
 
 setup_page_tables:
-    ; PML4 nullázása
+    ; PML4 + PDPT + 32 PD tábla nullázása
     mov edi, pml4_table
     xor eax, eax
-    mov ecx, 1024
-    rep stosd
-
-    ; PDPT nullázása
-    mov edi, pdpt_table
-    mov ecx, 1024
-    rep stosd
-
-    ; PD nullázása
-    mov edi, pd_table
-    mov ecx, 1024
+    mov ecx, (2 + 32) * 1024
     rep stosd
 
     ; PML4 -> PDPT
     mov eax, pdpt_table
-    or eax, 0b11 ; present + writable
+    or eax, 0b11
     mov [pml4_table], eax
 
-    ; PDPT -> PD (Több GB-ot is lefedünk)
-    ; 1. GB
-    mov eax, pd_table
-    or eax, 0b11
-    mov [pdpt_table], eax
-    
-    ; 2. GB (Opcionális, ha a framebuffer magasabban van)
-    mov eax, pd_table_2
-    or eax, 0b11
-    mov [pdpt_table + 8], eax
-
-    ; 3. GB
-    mov eax, pd_table_3
-    or eax, 0b11
-    mov [pdpt_table + 16], eax
-
-    ; 4. GB
-    mov eax, pd_table_4
-    or eax, 0b11
-    mov [pdpt_table + 24], eax
-
-    ; PD feltöltése (Identity mapping)
-    ; 0-1 GB
+    ; PDPT -> 32 darab PD tábla (0-16GB lefedése)
     mov ecx, 0
-.map_p2_table_0:
-    mov eax, 0x200000 ; 2MB
+.map_pdpt:
+    mov eax, 4096
     mul ecx
-    or eax, 0b10000011 ; present + writable + huge page
-    mov [pd_table + ecx * 8], eax
+    add eax, pd_tables
+    or eax, 0b11
+    mov [pdpt_table + ecx * 8], eax
+    mov dword [pdpt_table + ecx * 8 + 4], 0 ; Felső 32 bit 0
     inc ecx
-    cmp ecx, 512
-    jne .map_p2_table_0
+    cmp ecx, 32
+    jne .map_pdpt
 
-    ; 1-2 GB
+    ; PD-k feltöltése (Identity mapping 2MB lapokkal)
     mov ecx, 0
-.map_p2_table_2:
+.map_pds:
     mov eax, 0x200000
     mul ecx
-    add eax, 0x40000000 ; +1GB
-    or eax, 0b10000011
-    mov [pd_table_2 + ecx * 8], eax
+    or eax, 0b10000011 ; huge page + write + present
+    mov [pd_tables + ecx * 8], eax
+    mov [pd_tables + ecx * 8 + 4], edx ; EDX-ben van a cím felső része a mul után!
     inc ecx
-    cmp ecx, 512
-    jne .map_p2_table_2
-
-    ; 2-3 GB
-    mov ecx, 0
-.map_p2_table_3:
-    mov eax, 0x200000
-    mul ecx
-    add eax, 0x80000000 ; +2GB
-    or eax, 0b10000011
-    mov [pd_table_3 + ecx * 8], eax
-    inc ecx
-    cmp ecx, 512
-    jne .map_p2_table_3
-
-    ; 3-4 GB
-    mov ecx, 0
-.map_p2_table_4:
-    mov eax, 0x200000
-    mul ecx
-    add eax, 0xC0000000 ; +3GB
-    or eax, 0b10000011
-    mov [pd_table_4 + ecx * 8], eax
-    inc ecx
-    cmp ecx, 512
-    jne .map_p2_table_4
-    
+    cmp ecx, 16384 ; 32 tábla * 512 bejegyzés
+    jne .map_pds
     ret
 
 enable_paging:
     mov eax, pml4_table
     mov cr3, eax
-
     mov eax, cr4
-    or eax, 1 << 5 ; PAE bit
+    or eax, 1 << 5
     mov cr4, eax
-
-    mov ecx, 0xC0000080 ; EFER MSR
+    mov ecx, 0xC0000080
     rdmsr
-    or eax, 1 << 8 ; LME (Long Mode Enable)
+    or eax, 1 << 8
     wrmsr
-
     mov eax, cr0
-    or eax, 1 << 31 ; Paging bit
+    or eax, 1 << 31
     mov cr0, eax
     ret
 
 error:
-    mov dword [0xb8000], 0x4f524f45
-    mov dword [0xb8004], 0x4f3a4f52
+    mov dword [0xb8000], 0x4f524f45 ; "ER"
     mov [0xb8008], al
     hlt
 
@@ -202,9 +148,17 @@ long_mode_start:
     mov es, ax
     mov fs, ax
     mov gs, ax
+    
+    ; Stack igazítása 16 bájtra (ABI elvárás)
+    mov rsp, stack_top
+    
+    ; Debug jelzés: Zöld '!' a sarokba
+    mov rax, 0x2F212F212F212F21
+    mov [0xB8000], rax
 
-    ; EBX tartalmazza a Multiboot info címet (32-biten raktuk oda)
-    mov edi, ebx 
+    ; Multiboot pointer átadása
+    xor rdi, rdi
+    mov edi, [multiboot_ptr]
     
     call kernel_main
     hlt
@@ -215,19 +169,16 @@ pml4_table:
     resb 4096
 pdpt_table:
     resb 4096
-pd_table:
-    resb 4096
-pd_table_2:
-    resb 4096
-pd_table_3:
-    resb 4096
-pd_table_4:
-    resb 4096
+pd_tables:
+    resb 4096 * 32
+multiboot_ptr:
+    resd 1
 stack_bottom:
     resb 16384
 stack_top:
 
 section .rodata
+align 8
 gdt64:
     dq 0 ; null descriptor
 .code: equ $ - gdt64
@@ -236,4 +187,10 @@ gdt64:
     dq (1<<44) | (1<<47) | (1<<41)           ; data descriptor
 .pointer:
     dw $ - gdt64 - 1
-    dq gdt64 ; 64 bites cím
+    dq gdt64
+
+align 8
+global wallpaper_data
+wallpaper_data:
+    incbin "sysroot/AnimOS/assets/wallpapers/bubble.bmp"
+wallpaper_end:

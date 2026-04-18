@@ -32,7 +32,6 @@ link:
 # Building ISO
 iso:
 	cp $(BUILDDIR)/kernel.bin isodir/boot/
-	cp sysroot/AnimOS/assets/wallpapers/bubble.bmp isodir/boot/
 	cp $(CONFIGDIR)/grub.cfg isodir/boot/grub/
 	rm -rf isodir/boot/grub/themes/grub-theme
 	mkdir -p isodir/boot/grub/themes/grub-theme
