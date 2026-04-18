@@ -8,7 +8,17 @@ header_start:
     ; Checksum
     dd 0x100000000 - (0xe85250d6 + 0 + (header_end - header_start))
 
+    ; Framebuffer tag
+    align 8
+    dw 5                         ; type 5 (framebuffer)
+    dw 0                         ; flags
+    dd 20                        ; size
+    dd 1024                      ; width
+    dd 768                       ; height
+    dd 32                        ; depth
+
     ; End tag
+    align 8
     dw 0
     dw 0
     dd 8
@@ -21,6 +31,9 @@ extern kernel_main
 
 _start:
     mov esp, stack_top
+    
+    ; Megőrizzük az EBX-et (Multiboot info)
+    push ebx
 
     call check_cpuid
     call check_long_mode
@@ -29,6 +42,7 @@ _start:
     call enable_paging
 
     lgdt [gdt64.pointer]
+    pop ebx ; Visszaszerezzük az EBX-et
     jmp gdt64.code:long_mode_start
 
 check_cpuid:
@@ -64,18 +78,18 @@ check_long_mode:
     jmp error
 
 setup_page_tables:
-    ; 1. PML4 nullázása (Kritikus!)
+    ; PML4 nullázása
     mov edi, pml4_table
     xor eax, eax
     mov ecx, 1024
     rep stosd
 
-    ; 2. PDPT nullázása
+    ; PDPT nullázása
     mov edi, pdpt_table
     mov ecx, 1024
     rep stosd
 
-    ; 3. PD nullázása
+    ; PD nullázása
     mov edi, pd_table
     mov ecx, 1024
     rep stosd
@@ -85,22 +99,75 @@ setup_page_tables:
     or eax, 0b11 ; present + writable
     mov [pml4_table], eax
 
-    ; PDPT -> PD
+    ; PDPT -> PD (Több GB-ot is lefedünk)
+    ; 1. GB
     mov eax, pd_table
-    or eax, 0b11 ; present + writable
+    or eax, 0b11
     mov [pdpt_table], eax
+    
+    ; 2. GB (Opcionális, ha a framebuffer magasabban van)
+    mov eax, pd_table_2
+    or eax, 0b11
+    mov [pdpt_table + 8], eax
 
-    ; PD feltöltése (Identity mapping 1GB-ig, 2MB-os lapokkal)
+    ; 3. GB
+    mov eax, pd_table_3
+    or eax, 0b11
+    mov [pdpt_table + 16], eax
+
+    ; 4. GB
+    mov eax, pd_table_4
+    or eax, 0b11
+    mov [pdpt_table + 24], eax
+
+    ; PD feltöltése (Identity mapping)
+    ; 0-1 GB
     mov ecx, 0
-.map_p2_table:
+.map_p2_table_0:
     mov eax, 0x200000 ; 2MB
     mul ecx
     or eax, 0b10000011 ; present + writable + huge page
     mov [pd_table + ecx * 8], eax
-
     inc ecx
     cmp ecx, 512
-    jne .map_p2_table
+    jne .map_p2_table_0
+
+    ; 1-2 GB
+    mov ecx, 0
+.map_p2_table_2:
+    mov eax, 0x200000
+    mul ecx
+    add eax, 0x40000000 ; +1GB
+    or eax, 0b10000011
+    mov [pd_table_2 + ecx * 8], eax
+    inc ecx
+    cmp ecx, 512
+    jne .map_p2_table_2
+
+    ; 2-3 GB
+    mov ecx, 0
+.map_p2_table_3:
+    mov eax, 0x200000
+    mul ecx
+    add eax, 0x80000000 ; +2GB
+    or eax, 0b10000011
+    mov [pd_table_3 + ecx * 8], eax
+    inc ecx
+    cmp ecx, 512
+    jne .map_p2_table_3
+
+    ; 3-4 GB
+    mov ecx, 0
+.map_p2_table_4:
+    mov eax, 0x200000
+    mul ecx
+    add eax, 0xC0000000 ; +3GB
+    or eax, 0b10000011
+    mov [pd_table_4 + ecx * 8], eax
+    inc ecx
+    cmp ecx, 512
+    jne .map_p2_table_4
+    
     ret
 
 enable_paging:
@@ -136,16 +203,25 @@ long_mode_start:
     mov fs, ax
     mov gs, ax
 
+    ; EBX tartalmazza a Multiboot info címet (32-biten raktuk oda)
+    mov edi, ebx 
+    
     call kernel_main
     hlt
 
 section .bss
-align 4096 ; A laptábláknak kötelező a 4KB-os igazítás!
+align 4096
 pml4_table:
     resb 4096
 pdpt_table:
     resb 4096
 pd_table:
+    resb 4096
+pd_table_2:
+    resb 4096
+pd_table_3:
+    resb 4096
+pd_table_4:
     resb 4096
 stack_bottom:
     resb 16384
