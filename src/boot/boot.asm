@@ -10,18 +10,20 @@ header_start:
 
     ; Framebuffer tag
     align 8
-    dw 5                         ; type 5 (framebuffer)
+    dw 5                         ; type 5
     dw 0                         ; flags
     dd 20                        ; size
     dd 1024                      ; width
     dd 768                       ; height
     dd 32                        ; depth
 
-    ; Module alignment
+    ; Information Request Tag (Biztos ami biztos)
     align 8
-    dw 6
-    dw 0
-    dd 8
+    dw 1                         ; type 1
+    dw 0                         ; flags
+    dd 12                        ; size
+    dd 8                         ; request framebuffer
+    dd 0                         ; padding to 8 bytes
 
     ; End tag
     align 8
@@ -36,10 +38,8 @@ global _start
 extern kernel_main
 
 _start:
-    ; Stack beállítása
+    cli
     mov esp, stack_top
-    
-    ; Multiboot info mentése (ebx-ben jön)
     mov [multiboot_ptr], ebx
 
     call check_cpuid
@@ -65,8 +65,7 @@ check_cpuid:
     je .no_cpuid
     ret
 .no_cpuid:
-    mov al, "1"
-    jmp error
+    hlt
 
 check_long_mode:
     mov eax, 0x80000000
@@ -79,14 +78,13 @@ check_long_mode:
     jz .no_long_mode
     ret
 .no_long_mode:
-    mov al, "2"
-    jmp error
+    hlt
 
 setup_page_tables:
-    ; PML4 + PDPT + 32 PD tábla nullázása
+    ; PML4 (1) + PDPT (1) + PDs (512) = 514 oldalt nullázunk
     mov edi, pml4_table
     xor eax, eax
-    mov ecx, (2 + 32) * 1024
+    mov ecx, 514 * 1024
     rep stosd
 
     ; PML4 -> PDPT
@@ -94,17 +92,18 @@ setup_page_tables:
     or eax, 0b11
     mov [pml4_table], eax
 
-    ; PDPT -> 32 darab PD tábla (0-16GB lefedése)
+    ; PDPT -> 512 PD tábla (0-512GB)
     mov ecx, 0
 .map_pdpt:
     mov eax, 4096
     mul ecx
     add eax, pd_tables
+    adc edx, 0
     or eax, 0b11
     mov [pdpt_table + ecx * 8], eax
-    mov dword [pdpt_table + ecx * 8 + 4], 0 ; Felső 32 bit 0
+    mov [pdpt_table + ecx * 8 + 4], edx
     inc ecx
-    cmp ecx, 32
+    cmp ecx, 512
     jne .map_pdpt
 
     ; PD-k feltöltése (Identity mapping 2MB lapokkal)
@@ -112,11 +111,11 @@ setup_page_tables:
 .map_pds:
     mov eax, 0x200000
     mul ecx
-    or eax, 0b10000011 ; huge page + write + present
+    or eax, 0b10000011
     mov [pd_tables + ecx * 8], eax
-    mov [pd_tables + ecx * 8 + 4], edx ; EDX-ben van a cím felső része a mul után!
+    mov [pd_tables + ecx * 8 + 4], edx
     inc ecx
-    cmp ecx, 16384 ; 32 tábla * 512 bejegyzés
+    cmp ecx, 512 * 512
     jne .map_pds
     ret
 
@@ -135,11 +134,6 @@ enable_paging:
     mov cr0, eax
     ret
 
-error:
-    mov dword [0xb8000], 0x4f524f45 ; "ER"
-    mov [0xb8008], al
-    hlt
-
 [BITS 64]
 long_mode_start:
     mov ax, gdt64.data
@@ -148,18 +142,10 @@ long_mode_start:
     mov es, ax
     mov fs, ax
     mov gs, ax
-    
-    ; Stack igazítása 16 bájtra (ABI elvárás)
     mov rsp, stack_top
-    
-    ; Debug jelzés: Zöld '!' a sarokba
-    mov rax, 0x2F212F212F212F21
-    mov [0xB8000], rax
 
-    ; Multiboot pointer átadása
     xor rdi, rdi
     mov edi, [multiboot_ptr]
-    
     call kernel_main
     hlt
 
@@ -170,9 +156,11 @@ pml4_table:
 pdpt_table:
     resb 4096
 pd_tables:
-    resb 4096 * 32
+    resb 4096 * 512
+align 16
 multiboot_ptr:
     resd 1
+    resb 12
 stack_bottom:
     resb 16384
 stack_top:
@@ -180,11 +168,11 @@ stack_top:
 section .rodata
 align 8
 gdt64:
-    dq 0 ; null descriptor
+    dq 0
 .code: equ $ - gdt64
-    dq (1<<43) | (1<<44) | (1<<47) | (1<<53) ; code descriptor
+    dq (1<<43) | (1<<44) | (1<<47) | (1<<53)
 .data: equ $ - gdt64
-    dq (1<<44) | (1<<47) | (1<<41)           ; data descriptor
+    dq (1<<44) | (1<<47) | (1<<41)
 .pointer:
     dw $ - gdt64 - 1
     dq gdt64

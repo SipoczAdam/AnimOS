@@ -10,7 +10,7 @@ AS = nasm
 LD = ld
 
 # 64-bit Flags
-CFLAGS = -m64 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -nostartfiles -nodefaultlibs -ffreestanding -O2
+CFLAGS = -m64 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -nostartfiles -nodefaultlibs -ffreestanding -O2 -mno-red-zone -mno-mmx -mno-sse -mno-sse2
 LDFLAGS = -m elf_x86_64 -T $(CONFIGDIR)/linker.ld -z max-page-size=0x1000
 
 all: prep compile link iso

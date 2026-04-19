@@ -7,20 +7,19 @@ SECTIONS {
         KEEP(*(.multiboot_header))
     }
 
-    /* Kód szekció */
-    .text : {
+    .text : ALIGN(4K) {
         *(.text)
     }
 
-    .rodata : {
+    .rodata : ALIGN(4K) {
         *(.rodata)
     }
 
-    .data : {
+    .data : ALIGN(4K) {
         *(.data)
     }
 
-    .bss : {
+    .bss : ALIGN(4K) {
         *(COMMON)
         *(.bss)
     }

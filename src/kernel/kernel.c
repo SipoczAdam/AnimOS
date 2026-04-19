@@ -1,4 +1,3 @@
-// Saját típusok definiálása
 typedef unsigned char      uint8_t;
 typedef unsigned short     uint16_t;
 typedef unsigned int       uint32_t;
@@ -21,7 +20,7 @@ struct multiboot_tag_framebuffer {
     uint32_t framebuffer_height;
     uint8_t framebuffer_bpp;
     uint8_t framebuffer_type;
-    uint8_t reserved;
+    uint16_t reserved;
 };
 
 #pragma pack(push, 1)
@@ -51,27 +50,27 @@ struct bmp_info_header {
 void draw_pixel(uint32_t x, uint32_t y, uint32_t color, struct multiboot_tag_framebuffer* fb) {
     if (x >= fb->framebuffer_width || y >= fb->framebuffer_height) return;
 
+    uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
+    uint32_t offset = y * fb->framebuffer_pitch + x * (fb->framebuffer_bpp / 8);
+
     if (fb->framebuffer_bpp == 32) {
-        uint32_t* screen = (uint32_t*)fb->framebuffer_addr;
-        uint32_t pitch = fb->framebuffer_pitch / 4;
-        screen[y * pitch + x] = color;
+        uint32_t* p = (uint32_t*)(screen + offset);
+        *p = color;
     } else if (fb->framebuffer_bpp == 24) {
-        uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
-        uint32_t offset = y * fb->framebuffer_pitch + x * 3;
         screen[offset] = color & 0xFF;
         screen[offset + 1] = (color >> 8) & 0xFF;
         screen[offset + 2] = (color >> 16) & 0xFF;
+    } else if (fb->framebuffer_bpp == 16) {
+        uint16_t* p = (uint16_t*)(screen + offset);
+        uint16_t r = (color >> 19) & 0x1F;
+        uint16_t g = (color >> 10) & 0x3F;
+        uint16_t b = (color >> 3) & 0x1F;
+        *p = (r << 11) | (g << 5) | b;
     }
 }
 
 void kernel_main(uint64_t multiboot_addr) {
     struct multiboot_tag_framebuffer* fb = 0;
-
-    // Keresés előtt egy fix fehér pont rajzolása (Debug)
-    // VirtualBox VBoxSVGA framebuffer címe gyakran 0xE0000000 környékén van
-    // Ezzel teszteljük, hogy egyáltalán eljutunk-e ide.
-    uint32_t* debug_ptr = (uint32_t*)0xE0000000;
-    for(int i = 0; i < 100; i++) debug_ptr[i] = 0xFFFFFF;
 
     struct multiboot_tag* tag;
     for (tag = (struct multiboot_tag*)(multiboot_addr + 8);
@@ -83,14 +82,15 @@ void kernel_main(uint64_t multiboot_addr) {
         }
     }
 
-    if (fb) {
-        // Ha megtaláltuk, töröljük a debug pontot és rajzoljuk a háttérképet
+    if (fb && fb->framebuffer_addr != 0) {
+        // Képernyő törlése feketével
         for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
             for (uint32_t x = 0; x < fb->framebuffer_width; x++) {
                 draw_pixel(x, y, 0x000000, fb);
             }
         }
 
+        // Háttérkép kirajzolása
         uint8_t* bmp_data = wallpaper_data;
         struct bmp_file_header* bfh = (struct bmp_file_header*)bmp_data;
         struct bmp_info_header* bih = (struct bmp_info_header*)(bmp_data + sizeof(struct bmp_file_header));
@@ -100,8 +100,7 @@ void kernel_main(uint64_t multiboot_addr) {
             int32_t bmp_w = bih->biWidth;
             int32_t bmp_h = bih->biHeight;
             int32_t abs_bmp_h = bmp_h < 0 ? -bmp_h : bmp_h;
-            uint32_t bpp = bih->biBitCount;
-            uint32_t bytes_per_pixel = bpp / 8;
+            uint32_t bytes_per_pixel = bih->biBitCount / 8;
             uint32_t row_size = (bmp_w * bytes_per_pixel + 3) & ~3;
 
             for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
@@ -116,11 +115,6 @@ void kernel_main(uint64_t multiboot_addr) {
                 }
             }
         }
-    } else {
-        // Ha nincs fb, legalább vga-n írjunk valamit
-        volatile uint16_t* vga = (volatile uint16_t*)0xB8000;
-        const char* msg = "DEBUG: Kernel Started, No FB";
-        for(int i = 0; msg[i]; i++) vga[i] = (uint16_t)msg[i] | 0x2F00;
     }
 
     while(1) {
