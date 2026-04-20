@@ -135,6 +135,35 @@ enable_paging:
     ret
 
 [BITS 64]
+extern mouse_handler_main
+global isr_mouse_stub
+isr_mouse_stub:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    call mouse_handler_main
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
+
+global idt_load
+idt_load:
+    lidt [rdi]
+    ret
+
 long_mode_start:
     mov ax, gdt64.data
     mov ss, ax
@@ -176,6 +205,12 @@ gdt64:
 .pointer:
     dw $ - gdt64 - 1
     dq gdt64
+
+align 8
+global cursor_data
+cursor_data:
+    incbin "sysroot/AnimOS/assets/cursor/Default/Normal Select.cur"
+cursor_end:
 
 align 8
 global wallpaper_data
