@@ -278,8 +278,12 @@ void kernel_main(uint64_t multiboot_addr) {
                 else if (x > dock_x + dock_w - radius && y > dock_y + dock_h - radius) { dx = x - (dock_x + dock_w - radius); dy = y - (dock_y + dock_h - radius); is_corner = 1; }
                 if (is_corner) {
                     uint32_t dist_sq = dx*dx + dy*dy;
-                    if (dist_sq > radius*radius) alpha = 0;
-                    else { uint32_t dist = sqrt_int(dist_sq); if (dist > radius - 2) alpha = (150 * (radius - dist)) / 2; }
+                    uint32_t r_sq = radius * radius;
+                    uint32_t inner_r_sq = (radius - 1) * (radius - 1);
+                    if (dist_sq >= r_sq) alpha = 0;
+                    else if (dist_sq > inner_r_sq) {
+                        alpha = (150 * (r_sq - dist_sq)) / (r_sq - inner_r_sq);
+                    }
                 }
                 if (alpha > 0) draw_pixel(x, y, blend_colors(get_wallpaper_pixel(x, y, fb), dock_color, alpha), fb);
             }
