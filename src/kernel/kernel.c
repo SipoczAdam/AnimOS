@@ -271,7 +271,7 @@ void kernel_main(uint64_t multiboot_addr) {
         uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20, radius = 25, dock_color = 0xFFFFFF;
         for (uint32_t y = dock_y; y < dock_y + dock_h; y++) {
             for (uint32_t x = dock_x; x < dock_x + dock_w; x++) {
-                uint8_t alpha = 150; uint32_t dx = 0, dy = 0; int is_corner = 0;
+                uint8_t alpha = 200; uint32_t dx = 0, dy = 0; int is_corner = 0;
                 if (x < dock_x + radius && y < dock_y + radius) { dx = (dock_x + radius) - x; dy = (dock_y + radius) - y; is_corner = 1; }
                 else if (x > dock_x + dock_w - radius && y < dock_y + radius) { dx = x - (dock_x + dock_w - radius); dy = (dock_y + radius) - y; is_corner = 1; }
                 else if (x < dock_x + radius && y > dock_y + dock_h - radius) { dx = (dock_x + radius) - x; dy = y - (dock_y + dock_h - radius); is_corner = 1; }
@@ -282,7 +282,7 @@ void kernel_main(uint64_t multiboot_addr) {
                     uint32_t inner_r_sq = (radius - 1) * (radius - 1);
                     if (dist_sq >= r_sq) alpha = 0;
                     else if (dist_sq > inner_r_sq) {
-                        alpha = (150 * (r_sq - dist_sq)) / (r_sq - inner_r_sq);
+                        alpha = (200 * (r_sq - dist_sq)) / (r_sq - inner_r_sq);
                     }
                 }
                 if (alpha > 0) draw_pixel(x, y, blend_colors(get_wallpaper_pixel(x, y, fb), dock_color, alpha), fb);
