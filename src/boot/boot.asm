@@ -217,3 +217,9 @@ global wallpaper_data
 wallpaper_data:
     incbin "sysroot/AnimOS/assets/wallpapers/bubble.bmp"
 wallpaper_end:
+
+align 8
+global power_icon_data
+power_icon_data:
+    incbin "sysroot/AnimOS/assets/taskbar/power.bmp"
+power_icon_end:

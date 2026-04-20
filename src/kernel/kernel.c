@@ -7,6 +7,7 @@ typedef int                int32_t;
 
 extern uint8_t wallpaper_data[];
 extern uint8_t cursor_data[];
+extern uint8_t power_icon_data[];
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -223,6 +224,30 @@ void draw_cursor(int32_t mx, int32_t my, struct multiboot_tag_framebuffer* fb) {
     }
 }
 
+void draw_icon(uint32_t x, uint32_t y, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb) {
+    struct bmp_file_header* bfh = (struct bmp_file_header*)bmp_data;
+    struct bmp_info_header* bih = (struct bmp_info_header*)(bmp_data + sizeof(struct bmp_file_header));
+    uint8_t* pixels = bmp_data + bfh->bfOffBits;
+    int32_t w = bih->biWidth, h = bih->biHeight, abs_h = h < 0 ? -h : h;
+    uint32_t bpp = bih->biBitCount;
+    uint32_t row_size = (w * (bpp / 8) + 3) & ~3;
+    for (int32_t iy = 0; iy < abs_h; iy++) {
+        for (int32_t ix = 0; ix < w; ix++) {
+            int32_t src_y = (h > 0) ? (abs_h - 1 - iy) : iy;
+            uint8_t* p = pixels + (src_y * row_size) + (ix * (bpp / 8));
+            uint32_t color = (p[2] << 16) | (p[1] << 8) | p[0];
+            if (bpp == 32) {
+                uint8_t alpha = p[3]; if (alpha == 0) continue;
+                uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
+                uint32_t offset = (y + iy) * fb->framebuffer_pitch + (x + ix) * (fb->framebuffer_bpp / 8);
+                uint32_t bg = (fb->framebuffer_bpp == 32) ? *(uint32_t*)(screen + offset) : (screen[offset+2] << 16) | (screen[offset+1] << 8) | screen[offset];
+                color = blend_colors(bg, color, alpha);
+            }
+            draw_pixel(x + ix, y + iy, color, fb);
+        }
+    }
+}
+
 void kernel_main(uint64_t multiboot_addr) {
     struct multiboot_tag_framebuffer* fb = 0;
     struct multiboot_tag* tag;
@@ -259,6 +284,11 @@ void kernel_main(uint64_t multiboot_addr) {
                 if (alpha > 0) draw_pixel(x, y, blend_colors(get_wallpaper_pixel(x, y, fb), dock_color, alpha), fb);
             }
         }
+        
+        struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
+        int32_t icon_h = icon_bih->biHeight < 0 ? -icon_bih->biHeight : icon_bih->biHeight;
+        draw_icon(dock_x + 15, dock_y + (dock_h - icon_h) / 2, power_icon_data, fb);
+
         while(1) { 
             int32_t mx = mouse_x, my = mouse_y;
             draw_cursor(mx, my, fb); 
