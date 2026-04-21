@@ -57,6 +57,8 @@ extern void idt_load(struct idt_ptr* ptr);
 extern void isr_mouse_stub(void);
 
 volatile int32_t mouse_x = 512, mouse_y = 384;
+volatile uint8_t mouse_left_button = 0;
+volatile uint8_t mouse_clicked = 0;
 uint8_t mouse_cycle = 0;
 uint8_t mouse_byte[3];
 
@@ -136,6 +138,12 @@ void mouse_handler_main() {
                     if (mouse_y < 0) mouse_y = 0;
                     if (mouse_x > (int32_t)screen_w - 5) mouse_x = screen_w - 5;
                     if (mouse_y > (int32_t)screen_h - 5) mouse_y = screen_h - 5;
+
+                    uint8_t current_left = mouse_byte[0] & 1;
+                    if (current_left && !mouse_left_button) {
+                        mouse_clicked = 1;
+                    }
+                    mouse_left_button = current_left;
                     break;
             }
         }
@@ -248,6 +256,48 @@ void draw_icon(uint32_t x, uint32_t y, uint8_t* bmp_data, struct multiboot_tag_f
     }
 }
 
+void hide_cursor(struct multiboot_tag_framebuffer* fb) {
+    if (last_mouse_x == -1) return;
+    uint8_t* dib = cursor_data + 6 + 16;
+    struct bmp_info_header* bih = (struct bmp_info_header*)dib;
+    int32_t w = bih->biWidth, h = bih->biHeight / 2;
+    for (int32_t y = 0; y < h; y++) {
+        for (int32_t x = 0; x < w; x++) { draw_pixel(last_mouse_x + x, last_mouse_y + y, cursor_buffer[y * w + x], fb); }
+    }
+    last_mouse_x = -1; last_mouse_y = -1;
+}
+
+void draw_power_menu(struct multiboot_tag_framebuffer* fb, int open) {
+    uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20;
+    uint32_t menu_w = 200, menu_h = 250, menu_x = dock_x, menu_y = dock_y - menu_h - 10, radius = 15;
+    if (open) {
+        for (uint32_t y = menu_y; y < menu_y + menu_h; y++) {
+            for (uint32_t x = menu_x; x < menu_x + menu_w; x++) {
+                uint8_t alpha = 220; uint32_t dx = 0, dy = 0; int is_corner = 0;
+                if (x < menu_x + radius && y < menu_y + radius) { dx = (menu_x + radius) - x; dy = (menu_y + radius) - y; is_corner = 1; }
+                else if (x > menu_x + menu_w - radius && y < menu_y + radius) { dx = x - (menu_x + menu_w - radius); dy = (menu_y + radius) - y; is_corner = 1; }
+                else if (x < menu_x + radius && y > menu_y + menu_h - radius) { dx = (menu_x + radius) - x; dy = y - (menu_y + menu_h - radius); is_corner = 1; }
+                else if (x > menu_x + menu_w - radius && y > menu_y + menu_h - radius) { dx = x - (menu_x + menu_w - radius); dy = y - (menu_y + menu_h - radius); is_corner = 1; }
+                if (is_corner) {
+                    uint32_t dist_sq = dx*dx + dy*dy;
+                    if (dist_sq >= radius * radius) alpha = 0;
+                    else if (dist_sq > (radius-1)*(radius-1)) alpha = (220 * (radius*radius - dist_sq)) / (radius*radius - (radius-1)*(radius-1));
+                }
+                if (alpha > 0) {
+                    uint32_t color = 0xFFFFFF;
+                    if (is_corner) { if (dx*dx+dy*dy > (radius-2)*(radius-2)) color = 0xCCCCCC; }
+                    else if (x == menu_x || x == menu_x + menu_w - 1 || y == menu_y || y == menu_y + menu_h - 1) color = 0xCCCCCC;
+                    draw_pixel(x, y, blend_colors(get_wallpaper_pixel(x, y, fb), color, alpha), fb);
+                }
+            }
+        }
+    } else {
+        for (uint32_t y = menu_y; y < menu_y + menu_h; y++) {
+            for (uint32_t x = menu_x; x < menu_x + menu_w; x++) { draw_pixel(x, y, get_wallpaper_pixel(x, y, fb), fb); }
+        }
+    }
+}
+
 void kernel_main(uint64_t multiboot_addr) {
     struct multiboot_tag_framebuffer* fb = 0;
     struct multiboot_tag* tag;
@@ -291,10 +341,28 @@ void kernel_main(uint64_t multiboot_addr) {
         
         struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
         int32_t icon_h = icon_bih->biHeight < 0 ? -icon_bih->biHeight : icon_bih->biHeight;
-        draw_icon(dock_x + 15, dock_y + (dock_h - icon_h) / 2, power_icon_data, fb);
+        int32_t icon_w = icon_bih->biWidth;
+        int32_t icon_x = dock_x + 15, icon_y = dock_y + (dock_h - icon_h) / 2;
+        draw_icon(icon_x, icon_y, power_icon_data, fb);
 
+        int power_menu_open = 0;
         while(1) { 
             int32_t mx = mouse_x, my = mouse_y;
+            if (mouse_clicked) {
+                mouse_clicked = 0;
+                uint32_t menu_w = 200, menu_h = 250, menu_x = dock_x, menu_y = dock_y - menu_h - 10;
+                if (mx >= icon_x && mx <= icon_x + icon_w && my >= icon_y && my <= icon_y + icon_h) {
+                    power_menu_open = !power_menu_open;
+                    hide_cursor(fb);
+                    draw_power_menu(fb, power_menu_open);
+                } else if (power_menu_open) {
+                    if (!(mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + menu_w) && my >= (int32_t)menu_y && my <= (int32_t)(menu_y + menu_h))) {
+                        power_menu_open = 0;
+                        hide_cursor(fb);
+                        draw_power_menu(fb, 0);
+                    }
+                }
+            }
             draw_cursor(mx, my, fb); 
             for(int i = 0; i < 500; i++) __asm__ volatile("pause"); 
         }
