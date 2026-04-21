@@ -215,7 +215,7 @@ cursor_end:
 align 8
 global wallpaper_data
 wallpaper_data:
-    incbin "sysroot/AnimOS/assets/wallpapers/default.bmp"
+    incbin "sysroot/AnimOS/assets/wallpapers/clarity.bmp"
 wallpaper_end:
 
 align 8
