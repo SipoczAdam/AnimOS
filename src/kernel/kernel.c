@@ -108,8 +108,6 @@ void mouse_handler_main() {
         if (status & 0x20) {
             switch (mouse_cycle) {
                 case 0:
-                    // Csak akkor kezdünk csomagot, ha a 3. bit 1. 
-                    // Az overflow biteket (6,7) NEM dobjuk el, mert VirtualBoxban gyakoriak!
                     if (data & 0x08) {
                         mouse_byte[0] = data;
                         mouse_cycle = 1;
@@ -126,14 +124,12 @@ void mouse_handler_main() {
                     int32_t dx = (int32_t)mouse_byte[1];
                     int32_t dy = (int32_t)mouse_byte[2];
                     
-                    // Előjel kiterjesztés a 4. és 5. bit alapján
                     if (mouse_byte[0] & 0x10) dx -= 256;
                     if (mouse_byte[0] & 0x20) dy -= 256;
                     
                     mouse_x += dx;
                     mouse_y -= dy;
                     
-                    // Clamping a képernyőre
                     if (mouse_x < 0) mouse_x = 0;
                     if (mouse_y < 0) mouse_y = 0;
                     if (mouse_x > (int32_t)screen_w - 5) mouse_x = screen_w - 5;
@@ -189,35 +185,46 @@ uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
     return (((rf * alpha + rb * (255 - alpha)) / 255) << 16) | (((gf * alpha + gb * (255 - alpha)) / 255) << 8) | ((bf * alpha + bb * (255 - alpha)) / 255);
 }
 
-uint32_t get_wallpaper_pixel(uint32_t x, uint32_t y, struct multiboot_tag_framebuffer* fb) {
-    uint8_t* bmp_data = wallpaper_data;
-    struct bmp_file_header* bfh = (struct bmp_file_header*)bmp_data;
-    struct bmp_info_header* bih = (struct bmp_info_header*)(bmp_data + sizeof(struct bmp_file_header));
-    uint8_t* pixels = bmp_data + bfh->bfOffBits;
-    int32_t bmp_w = bih->biWidth, bmp_h = bih->biHeight, abs_bmp_h = bmp_h < 0 ? -bmp_h : bmp_h;
-    uint32_t row_size = (bmp_w * (bih->biBitCount / 8) + 3) & ~3;
-    int32_t src_y = (bmp_h > 0) ? (abs_bmp_h - 1 - (int32_t)(y * abs_bmp_h / fb->framebuffer_height)) : (int32_t)(y * abs_bmp_h / fb->framebuffer_height);
-    uint8_t* p = pixels + (src_y * row_size) + ((int32_t)(x * bmp_w / fb->framebuffer_width) * (bih->biBitCount / 8));
+uint32_t cursor_buffer[64 * 64];
+uint32_t menu_area_buffer[200 * 300]; 
+int32_t last_mouse_x = -1, last_mouse_y = -1;
+
+struct wallpaper_info {
+    uint8_t* pixels;
+    int32_t width, height;
+    uint32_t row_size;
+    int32_t bpp;
+};
+struct wallpaper_info wall_info;
+
+void init_wallpaper_info() {
+    struct bmp_file_header* bfh = (struct bmp_file_header*)wallpaper_data;
+    struct bmp_info_header* bih = (struct bmp_info_header*)(wallpaper_data + sizeof(struct bmp_file_header));
+    wall_info.pixels = wallpaper_data + bfh->bfOffBits;
+    wall_info.width = bih->biWidth;
+    wall_info.height = bih->biHeight;
+    wall_info.bpp = bih->biBitCount;
+    wall_info.row_size = (wall_info.width * (wall_info.bpp / 8) + 3) & ~3;
+}
+
+uint32_t get_wallpaper_pixel_fast(uint32_t x, uint32_t y, struct multiboot_tag_framebuffer* fb) {
+    int32_t abs_bmp_h = wall_info.height < 0 ? -wall_info.height : wall_info.height;
+    int32_t src_y = (wall_info.height > 0) ? (abs_bmp_h - 1 - (int32_t)(y * abs_bmp_h / fb->framebuffer_height)) : (int32_t)(y * abs_bmp_h / fb->framebuffer_height);
+    uint8_t* p = wall_info.pixels + (src_y * wall_info.row_size) + ((int32_t)(x * wall_info.width / fb->framebuffer_width) * (wall_info.bpp / 8));
     return (p[2] << 16) | (p[1] << 8) | p[0];
 }
 
-uint32_t cursor_buffer[64 * 64];
-int32_t last_mouse_x = -1, last_mouse_y = -1;
-
 void draw_cursor(int32_t mx, int32_t my, struct multiboot_tag_framebuffer* fb) {
     if (mx == last_mouse_x && my == last_mouse_y) return;
-    
     uint8_t* dib = cursor_data + 6 + 16;
     struct bmp_info_header* bih = (struct bmp_info_header*)dib;
     uint8_t* pixels = dib + bih->biSize;
     int32_t w = bih->biWidth, h = bih->biHeight / 2;
-
     if (last_mouse_x != -1) {
         for (int32_t y = 0; y < h; y++) {
             for (int32_t x = 0; x < w; x++) { draw_pixel(last_mouse_x + x, last_mouse_y + y, cursor_buffer[y * w + x], fb); }
         }
     }
-
     last_mouse_x = mx; last_mouse_y = my;
     for (int32_t y = 0; y < h; y++) {
         for (int32_t x = 0; x < w; x++) {
@@ -256,6 +263,30 @@ void draw_icon(uint32_t x, uint32_t y, uint8_t* bmp_data, struct multiboot_tag_f
     }
 }
 
+void draw_dock(struct multiboot_tag_framebuffer* fb) {
+    uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20, radius = 25, dock_color = 0xFFFFFF;
+    for (uint32_t y = dock_y; y < dock_y + dock_h; y++) {
+        for (uint32_t x = dock_x; x < dock_x + dock_w; x++) {
+            uint8_t alpha = 200; uint32_t dx = 0, dy = 0; int is_corner = 0;
+            if (x < dock_x + radius && y < dock_y + radius) { dx = (dock_x + radius) - x; dy = (dock_y + radius) - y; is_corner = 1; }
+            else if (x > dock_x + dock_w - radius && y < dock_y + radius) { dx = x - (dock_x + dock_w - radius); dy = (dock_y + radius) - y; is_corner = 1; }
+            else if (x < dock_x + radius && y > dock_y + dock_h - radius) { dx = (dock_x + radius) - x; dy = y - (dock_y + dock_h - radius); is_corner = 1; }
+            else if (x > dock_x + dock_w - radius && y > dock_y + dock_h - radius) { dx = x - (dock_x + dock_w - radius); dy = y - (dock_y + dock_h - radius); is_corner = 1; }
+            if (is_corner) {
+                uint32_t dist_sq = dx*dx + dy*dy;
+                uint32_t r_sq = radius * radius;
+                uint32_t inner_r_sq = (radius - 1) * (radius - 1);
+                if (dist_sq >= r_sq) alpha = 0;
+                else if (dist_sq > inner_r_sq) alpha = (200 * (r_sq - dist_sq)) / (r_sq - inner_r_sq);
+            }
+            if (alpha > 0) draw_pixel(x, y, blend_colors(get_wallpaper_pixel_fast(x, y, fb), dock_color, alpha), fb);
+        }
+    }
+    struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
+    int32_t icon_h = icon_bih->biHeight < 0 ? -icon_bih->biHeight : icon_bih->biHeight;
+    draw_icon(dock_x + 15, dock_y + (dock_h - icon_h) / 2, power_icon_data, fb);
+}
+
 void hide_cursor(struct multiboot_tag_framebuffer* fb) {
     if (last_mouse_x == -1) return;
     uint8_t* dib = cursor_data + 6 + 16;
@@ -267,17 +298,47 @@ void hide_cursor(struct multiboot_tag_framebuffer* fb) {
     last_mouse_x = -1; last_mouse_y = -1;
 }
 
-void draw_power_menu(struct multiboot_tag_framebuffer* fb, int open) {
+void msleep(uint32_t ms) {
+    if (ms == 0) return;
+    uint32_t total_ticks = ms * 1193; // PIT frekvencia ~1.193 MHz, tehát 1ms kb 1193 tick
+    while (total_ticks > 0) {
+        uint16_t ticks = (total_ticks > 0xFFFF) ? 0xFFFF : (uint16_t)total_ticks;
+        total_ticks -= ticks;
+        outb(0x43, 0xB0); // Channel 2, LSB/MSB, Mode 0 (Interrupt on terminal count)
+        outb(0x42, ticks & 0xFF);
+        outb(0x42, (ticks >> 8) & 0xFF);
+        uint8_t ctrl = inb(0x61) & 0xFC;
+        outb(0x61, ctrl | 1); // PIT2 gate on, speaker off
+        while (!(inb(0x61) & 0x20)); // Várakozás, amíg a PIT2 kimenete magas lesz (lefutott)
+    }
+}
+
+void draw_power_menu(struct multiboot_tag_framebuffer* fb, int progress) {
     uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20;
-    uint32_t menu_w = 200, menu_h = 250, menu_x = dock_x, menu_y = dock_y - menu_h - 10, radius = 15;
-    if (open) {
-        for (uint32_t y = menu_y; y < menu_y + menu_h; y++) {
-            for (uint32_t x = menu_x; x < menu_x + menu_w; x++) {
+    uint32_t menu_w = 200, menu_h = 250, menu_x = dock_x, radius = 15;
+    int32_t target_y = dock_y - menu_h - 10, start_y = dock_y;
+    int32_t current_y = start_y + (target_y - start_y) * progress / 100;
+    int32_t area_y = target_y, area_h = start_y - target_y;
+
+    hide_cursor(fb);
+
+    for (int32_t y = 0; y < area_h; y++) {
+        for (int32_t x = 0; x < (int32_t)menu_w; x++) {
+            menu_area_buffer[y * menu_w + x] = get_wallpaper_pixel_fast(menu_x + x, area_y + y, fb);
+        }
+    }
+
+    if (progress > 0) {
+        int32_t menu_rel_y = current_y - area_y;
+        for (int32_t y = 0; y < (int32_t)menu_h; y++) {
+            int32_t buffer_y = menu_rel_y + y;
+            if (buffer_y < 0 || buffer_y >= area_h) continue;
+            for (int32_t x = 0; x < (int32_t)menu_w; x++) {
                 uint8_t alpha = 220; uint32_t dx = 0, dy = 0; int is_corner = 0;
-                if (x < menu_x + radius && y < menu_y + radius) { dx = (menu_x + radius) - x; dy = (menu_y + radius) - y; is_corner = 1; }
-                else if (x > menu_x + menu_w - radius && y < menu_y + radius) { dx = x - (menu_x + menu_w - radius); dy = (menu_y + radius) - y; is_corner = 1; }
-                else if (x < menu_x + radius && y > menu_y + menu_h - radius) { dx = (menu_x + radius) - x; dy = y - (menu_y + menu_h - radius); is_corner = 1; }
-                else if (x > menu_x + menu_w - radius && y > menu_y + menu_h - radius) { dx = x - (menu_x + menu_w - radius); dy = y - (menu_y + menu_h - radius); is_corner = 1; }
+                if (x < (int32_t)radius && y < (int32_t)radius) { dx = radius - x; dy = radius - y; is_corner = 1; }
+                else if (x > (int32_t)menu_w - (int32_t)radius && y < (int32_t)radius) { dx = x - (menu_w - radius); dy = radius - y; is_corner = 1; }
+                else if (x < (int32_t)radius && y > (int32_t)menu_h - (int32_t)radius) { dx = radius - x; dy = y - (menu_h - radius); is_corner = 1; }
+                else if (x > (int32_t)menu_w - (int32_t)radius && y > (int32_t)menu_h - (int32_t)radius) { dx = x - (menu_w - radius); dy = y - (menu_h - radius); is_corner = 1; }
                 if (is_corner) {
                     uint32_t dist_sq = dx*dx + dy*dy;
                     if (dist_sq >= radius * radius) alpha = 0;
@@ -286,14 +347,15 @@ void draw_power_menu(struct multiboot_tag_framebuffer* fb, int open) {
                 if (alpha > 0) {
                     uint32_t color = 0xFFFFFF;
                     if (is_corner) { if (dx*dx+dy*dy > (radius-2)*(radius-2)) color = 0xCCCCCC; }
-                    else if (x == menu_x || x == menu_x + menu_w - 1 || y == menu_y || y == menu_y + menu_h - 1) color = 0xCCCCCC;
-                    draw_pixel(x, y, blend_colors(get_wallpaper_pixel(x, y, fb), color, alpha), fb);
+                    else if (x == 0 || x == (int32_t)menu_w - 1 || y == 0 || y == (int32_t)menu_h - 1) color = 0xCCCCCC;
+                    menu_area_buffer[buffer_y * menu_w + x] = blend_colors(menu_area_buffer[buffer_y * menu_w + x], color, alpha);
                 }
             }
         }
-    } else {
-        for (uint32_t y = menu_y; y < menu_y + menu_h; y++) {
-            for (uint32_t x = menu_x; x < menu_x + menu_w; x++) { draw_pixel(x, y, get_wallpaper_pixel(x, y, fb), fb); }
+    }
+    for (int32_t y = 0; y < area_h; y++) {
+        for (int32_t x = 0; x < (int32_t)menu_w; x++) {
+            draw_pixel(menu_x + x, area_y + y, menu_area_buffer[y * menu_w + x], fb);
         }
     }
 }
@@ -312,56 +374,41 @@ void kernel_main(uint64_t multiboot_addr) {
         idt_set_gate(44, (uint64_t)isr_mouse_stub, 0x08, 0x8E);
         idtp.limit = sizeof(idt) - 1; idtp.base = (uint64_t)&idt;
         idt_load(&idtp);
-        
         mouse_init();
-
+        init_wallpaper_info();
         for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
-            for (uint32_t x = 0; x < fb->framebuffer_width; x++) { draw_pixel(x, y, get_wallpaper_pixel(x, y, fb), fb); }
+            for (uint32_t x = 0; x < fb->framebuffer_width; x++) { draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb); }
         }
-        uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20, radius = 25, dock_color = 0xFFFFFF;
-        for (uint32_t y = dock_y; y < dock_y + dock_h; y++) {
-            for (uint32_t x = dock_x; x < dock_x + dock_w; x++) {
-                uint8_t alpha = 200; uint32_t dx = 0, dy = 0; int is_corner = 0;
-                if (x < dock_x + radius && y < dock_y + radius) { dx = (dock_x + radius) - x; dy = (dock_y + radius) - y; is_corner = 1; }
-                else if (x > dock_x + dock_w - radius && y < dock_y + radius) { dx = x - (dock_x + dock_w - radius); dy = (dock_y + radius) - y; is_corner = 1; }
-                else if (x < dock_x + radius && y > dock_y + dock_h - radius) { dx = (dock_x + radius) - x; dy = y - (dock_y + dock_h - radius); is_corner = 1; }
-                else if (x > dock_x + dock_w - radius && y > dock_y + dock_h - radius) { dx = x - (dock_x + dock_w - radius); dy = y - (dock_y + dock_h - radius); is_corner = 1; }
-                if (is_corner) {
-                    uint32_t dist_sq = dx*dx + dy*dy;
-                    uint32_t r_sq = radius * radius;
-                    uint32_t inner_r_sq = (radius - 1) * (radius - 1);
-                    if (dist_sq >= r_sq) alpha = 0;
-                    else if (dist_sq > inner_r_sq) {
-                        alpha = (200 * (r_sq - dist_sq)) / (r_sq - inner_r_sq);
-                    }
-                }
-                if (alpha > 0) draw_pixel(x, y, blend_colors(get_wallpaper_pixel(x, y, fb), dock_color, alpha), fb);
-            }
-        }
-        
+        draw_dock(fb);
+        uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20;
         struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
         int32_t icon_h = icon_bih->biHeight < 0 ? -icon_bih->biHeight : icon_bih->biHeight;
         int32_t icon_w = icon_bih->biWidth;
         int32_t icon_x = dock_x + 15, icon_y = dock_y + (dock_h - icon_h) / 2;
-        draw_icon(icon_x, icon_y, power_icon_data, fb);
-
         int power_menu_open = 0;
+        int power_menu_progress = 0;
         while(1) { 
             int32_t mx = mouse_x, my = mouse_y;
             if (mouse_clicked) {
                 mouse_clicked = 0;
                 uint32_t menu_w = 200, menu_h = 250, menu_x = dock_x, menu_y = dock_y - menu_h - 10;
-                if (mx >= icon_x && mx <= icon_x + icon_w && my >= icon_y && my <= icon_y + icon_h) {
-                    power_menu_open = !power_menu_open;
-                    hide_cursor(fb);
-                    draw_power_menu(fb, power_menu_open);
-                } else if (power_menu_open) {
-                    if (!(mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + menu_w) && my >= (int32_t)menu_y && my <= (int32_t)(menu_y + menu_h))) {
-                        power_menu_open = 0;
-                        hide_cursor(fb);
-                        draw_power_menu(fb, 0);
-                    }
+                if (mx >= icon_x && mx <= icon_x + icon_w && my >= icon_y && my <= icon_y + icon_h) power_menu_open = !power_menu_open;
+                else if (power_menu_open) {
+                    if (!(mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + menu_w) && my >= (int32_t)menu_y && my <= (int32_t)(menu_y + menu_h))) power_menu_open = 0;
                 }
+            }
+            if (power_menu_open && power_menu_progress < 100) {
+                power_menu_progress += 10; if (power_menu_progress > 100) power_menu_progress = 100;
+                hide_cursor(fb);
+                draw_power_menu(fb, power_menu_progress);
+                draw_cursor(mx, my, fb);
+                msleep(5);
+            } else if (!power_menu_open && power_menu_progress > 0) {
+                power_menu_progress -= 10; if (power_menu_progress < 0) power_menu_progress = 0;
+                hide_cursor(fb);
+                draw_power_menu(fb, power_menu_progress);
+                draw_cursor(mx, my, fb);
+                msleep(5);
             }
             draw_cursor(mx, my, fb); 
             for(int i = 0; i < 500; i++) __asm__ volatile("pause"); 
