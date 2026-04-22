@@ -366,7 +366,8 @@ void draw_string(uint32_t x, uint32_t y, const char* str, uint32_t color, struct
 }
 
 void draw_dock(struct multiboot_tag_framebuffer* fb) {
-    uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20, radius = 25, dock_color = 0xFFFFFF;
+    uint32_t margin = 20;
+    uint32_t dock_h = 55, dock_x = margin, dock_w = fb->framebuffer_width - 2 * margin, dock_y = fb->framebuffer_height - dock_h - margin, radius = 25, dock_color = 0xFFFFFF;
     for (uint32_t y = dock_y; y < dock_y + dock_h; y++) {
         for (uint32_t x = dock_x; x < dock_x + dock_w; x++) {
             uint8_t alpha = 200; uint32_t dx = 0, dy = 0; int is_corner = 0;
@@ -420,7 +421,8 @@ void msleep(uint32_t ms) {
 }
 
 void draw_power_menu(struct multiboot_tag_framebuffer* fb, int progress) {
-    uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20;
+    uint32_t margin = 20;
+    uint32_t dock_h = 55, dock_x = margin, dock_w = fb->framebuffer_width - 2 * margin, dock_y = fb->framebuffer_height - dock_h - margin;
     uint32_t menu_w = 200, menu_h = 250, menu_x = dock_x, radius = 15;
     int32_t target_y = dock_y - menu_h - 10, start_y = dock_y;
     int32_t current_y = start_y + (target_y - start_y) * progress / 100;
@@ -486,7 +488,8 @@ void kernel_main(uint64_t multiboot_addr) {
             for (uint32_t x = 0; x < fb->framebuffer_width; x++) { draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb); }
         }
         draw_dock(fb);
-        uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20;
+        uint32_t margin = 20;
+        uint32_t dock_h = 55, dock_x = margin, dock_w = fb->framebuffer_width - 2 * margin, dock_y = fb->framebuffer_height - dock_h - margin;
         struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
         int32_t icon_h = icon_bih->biHeight < 0 ? -icon_bih->biHeight : icon_bih->biHeight;
         int32_t icon_w = icon_bih->biWidth;
