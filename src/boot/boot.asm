@@ -223,3 +223,16 @@ global power_icon_data
 power_icon_data:
     incbin "sysroot/AnimOS/assets/taskbar/power.bmp"
 power_icon_end:
+
+align 8
+global arial_font_data
+arial_font_data:
+    incbin "sysroot/AnimOS/assets/fonts/arial_black/arial_black.bmp"
+arial_font_end:
+
+align 8
+global arial_font_xml_data
+arial_font_xml_data:
+    incbin "sysroot/AnimOS/assets/fonts/arial_black/arial_black.xml"
+    db 0 ; Null terminator for safety
+arial_font_xml_end:

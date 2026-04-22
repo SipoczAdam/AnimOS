@@ -8,6 +8,8 @@ typedef int                int32_t;
 extern uint8_t wallpaper_data[];
 extern uint8_t cursor_data[];
 extern uint8_t power_icon_data[];
+extern uint8_t arial_font_data[];
+extern uint8_t arial_font_xml_data[];
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -263,6 +265,106 @@ void draw_icon(uint32_t x, uint32_t y, uint8_t* bmp_data, struct multiboot_tag_f
     }
 }
 
+uint8_t read_rtc_reg(uint8_t reg) {
+    outb(0x70, reg);
+    return inb(0x71);
+}
+
+void get_time(uint8_t* h, uint8_t* m) {
+    while (read_rtc_reg(0x0A) & 0x80);
+    uint8_t s = read_rtc_reg(0x00);
+    *m = read_rtc_reg(0x02);
+    *h = read_rtc_reg(0x04);
+    uint8_t registerB = read_rtc_reg(0x0B);
+    if (!(registerB & 0x04)) {
+        *m = (*m & 0x0F) + ((*m / 16) * 10);
+        *h = ((*h & 0x0F) + (((*h & 0x70) / 16) * 10)) | (*h & 0x80);
+    }
+
+    if (!(registerB & 0x02) && (*h & 0x80)) {
+        *h = ((*h & 0x7F) + 12) % 24;
+    }
+
+    *h = (*h + 2) % 24;
+}
+
+const char* strstr_custom(const char* haystack, const char* needle) {
+    if (!*needle) return haystack;
+    for (; *haystack; haystack++) {
+        if (*haystack == *needle) {
+            const char *h = haystack, *n = needle;
+            while (*h && *n && *h == *n) { h++; n++; }
+            if (!*n) return haystack;
+        }
+    }
+    return 0;
+}
+
+int32_t atoi_custom(const char* s) {
+    int32_t res = 0, sign = 1;
+    if (*s == '-') { sign = -1; s++; }
+    while (*s >= '0' && *s <= '9') { res = res * 10 + (*s - '0'); s++; }
+    return res * sign;
+}
+
+int32_t get_attr_value(const char* tag, const char* attr) {
+    const char* p = strstr_custom(tag, attr);
+    if (!p) return 0;
+    while (*p && *p != '\"') p++;
+    if (*p == '\"') return atoi_custom(p + 1);
+    return 0;
+}
+
+int32_t draw_char(uint32_t x, uint32_t y, char c, uint32_t color, struct multiboot_tag_framebuffer* fb) {
+    char search[16] = "<char id=\"";
+    int i = 10;
+    uint8_t code = (uint8_t)c;
+    if (code >= 100) { search[i++] = (code / 100) + '0'; search[i++] = ((code / 10) % 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else if (code >= 10) { search[i++] = (code / 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else { search[i++] = code + '0'; }
+    search[i++] = '\"'; search[i] = 0;
+
+    const char* tag = strstr_custom((const char*)arial_font_xml_data, search);
+    if (!tag) return 0;
+
+    int32_t cx = get_attr_value(tag, " x=");
+    int32_t cy = get_attr_value(tag, " y=");
+    int32_t cw = get_attr_value(tag, " width=");
+    int32_t ch = get_attr_value(tag, " height=");
+    int32_t ox = get_attr_value(tag, " xoffset=");
+    int32_t oy = get_attr_value(tag, " yoffset=");
+    int32_t xa = get_attr_value(tag, " xadvance=");
+
+    struct bmp_file_header* bfh = (struct bmp_file_header*)arial_font_data;
+    struct bmp_info_header* bih = (struct bmp_info_header*)(arial_font_data + sizeof(struct bmp_file_header));
+    uint8_t* pixels = arial_font_data + bfh->bfOffBits;
+    uint32_t bpp = bih->biBitCount;
+    uint32_t row_size = (bih->biWidth * (bpp / 8) + 3) & ~3;
+    int32_t img_h = bih->biHeight < 0 ? -bih->biHeight : bih->biHeight;
+
+    for (int32_t iy = 0; iy < ch; iy++) {
+        for (int32_t ix = 0; ix < cw; ix++) {
+            int32_t src_y = (bih->biHeight > 0) ? (img_h - 1 - (cy + iy)) : (cy + iy);
+            uint8_t* p = pixels + (src_y * row_size) + ((cx + ix) * (bpp / 8));
+            uint8_t alpha = (bpp == 32) ? p[3] : ((p[0] > 20 || p[1] > 20 || p[2] > 20) ? 255 : 0);
+            if (alpha > 20) {
+                uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
+                uint32_t offset = (y + oy + iy) * fb->framebuffer_pitch + (x + ox + ix) * (fb->framebuffer_bpp / 8);
+                uint32_t bg = (fb->framebuffer_bpp == 32) ? *(uint32_t*)(screen + offset) : (screen[offset+2] << 16) | (screen[offset+1] << 8) | screen[offset];
+                draw_pixel(x + ox + ix, y + oy + iy, blend_colors(bg, color, alpha), fb);
+            }
+        }
+    }
+    return xa;
+}
+
+void draw_string(uint32_t x, uint32_t y, const char* str, uint32_t color, struct multiboot_tag_framebuffer* fb) {
+    while (*str) {
+        x += draw_char(x, y, *str, color, fb);
+        str++;
+    }
+}
+
 void draw_dock(struct multiboot_tag_framebuffer* fb) {
     uint32_t dock_h = 55, dock_w = (fb->framebuffer_width * 85) / 100, dock_x = (fb->framebuffer_width - dock_w) / 2, dock_y = fb->framebuffer_height - dock_h - 20, radius = 25, dock_color = 0xFFFFFF;
     for (uint32_t y = dock_y; y < dock_y + dock_h; y++) {
@@ -285,6 +387,10 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
     struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
     int32_t icon_h = icon_bih->biHeight < 0 ? -icon_bih->biHeight : icon_bih->biHeight;
     draw_icon(dock_x + 15, dock_y + (dock_h - icon_h) / 2, power_icon_data, fb);
+
+    uint8_t h, m; get_time(&h, &m);
+    char time_str[6] = { (h/10)+'0', (h%10)+'0', ':', (m/10)+'0', (m%10)+'0', 0 };
+    draw_string(dock_x + dock_w - 80, dock_y + 17, time_str, 0x333333, fb);
 }
 
 void hide_cursor(struct multiboot_tag_framebuffer* fb) {
@@ -387,7 +493,17 @@ void kernel_main(uint64_t multiboot_addr) {
         int32_t icon_x = dock_x + 15, icon_y = dock_y + (dock_h - icon_h) / 2;
         int power_menu_open = 0;
         int power_menu_progress = 0;
+        uint8_t last_min = 255;
+
         while(1) { 
+            uint8_t h, m;
+            get_time(&h, &m);
+            if (m != last_min) {
+                last_min = m;
+                hide_cursor(fb);
+                draw_dock(fb);
+            }
+
             int32_t mx = mouse_x, my = mouse_y;
             if (mouse_clicked) {
                 mouse_clicked = 0;
