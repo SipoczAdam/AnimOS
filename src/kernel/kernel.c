@@ -5,6 +5,19 @@ typedef unsigned int       uint32_t;
 typedef unsigned long long uint64_t;
 typedef int                int32_t;
 
+struct multiboot_tag { uint32_t type; uint32_t size; };
+struct multiboot_tag_framebuffer {
+    uint32_t type; uint32_t size; uint64_t framebuffer_addr; uint32_t framebuffer_pitch;
+    uint32_t framebuffer_width; uint32_t framebuffer_height; uint8_t framebuffer_bpp;
+    uint8_t framebuffer_type; uint16_t reserved;
+};
+
+struct idt_entry {
+    uint16_t base_low; uint16_t selector; uint8_t ist; uint8_t flags;
+    uint16_t base_mid; uint32_t base_high; uint32_t reserved;
+} __attribute__((packed));
+struct idt_ptr { uint16_t limit; uint64_t base; } __attribute__((packed));
+
 extern uint8_t wallpaper_data[];
 extern uint8_t cursor_data[];
 extern uint8_t power_icon_data[];
@@ -17,14 +30,77 @@ uint32_t screen_h = 768;
 int32_t cursor_w = 32;
 int32_t cursor_h = 32;
 
+void msleep(uint32_t ms);
+
 static inline void outb(uint16_t port, uint8_t val) {
     __asm__ volatile ( "outb %0, %1" : : "a"(val), "Nd"(port) );
+}
+
+static inline void outw(uint16_t port, uint16_t val) {
+    __asm__ volatile ( "outw %0, %1" : : "a"(val), "Nd"(port) );
 }
 
 static inline uint8_t inb(uint16_t port) {
     uint8_t ret;
     __asm__ volatile ( "inb %1, %0" : "=a"(ret) : "Nd"(port) );
     return ret;
+}
+
+int memcmp_custom(const void* s1, const void* s2, uint32_t n) {
+    const uint8_t *p1 = s1, *p2 = s2;
+    for (uint32_t i = 0; i < n; i++) {
+        if (p1[i] != p2[i]) return p1[i] - p2[i];
+    }
+    return 0;
+}
+
+void reboot() {
+    uint8_t good = 0x02;
+    while (good & 0x02) good = inb(0x64);
+    outb(0x64, 0xFE);
+    // Triple fault fallback
+    static struct idt_ptr zero_idtp = {0, 0};
+    __asm__ volatile("lidt %0" : : "m"(zero_idtp));
+    __asm__ volatile("int $3");
+    while(1) __asm__ volatile("hlt");
+}
+
+void shutdown(uint64_t multiboot_addr) {
+    // QEMU/Bochs
+    outw(0xB004, 0x2000);
+    outw(0x604, 0x2000);
+    // VirtualBox
+    outw(0x4004, 0x3400);
+
+    // ACPI próbálkozás (Multiboot 2 tag-ek alapján)
+    struct multiboot_tag* tag;
+    uint8_t* rsdp = 0;
+    for (tag = (struct multiboot_tag*)(multiboot_addr + 8); tag->type != 0; tag = (struct multiboot_tag*)((uint8_t*)tag + ((tag->size + 7) & ~7))) {
+        if (tag->type == 14 || tag->type == 15) { // RSDP v1 vagy v2
+            rsdp = (uint8_t*)tag + 8;
+            break;
+        }
+    }
+
+    if (rsdp) {
+        uint32_t rsdt_addr = *(uint32_t*)(rsdp + 16);
+        uint8_t* rsdt = (uint8_t*)(uint64_t)rsdt_addr;
+        if (memcmp_custom(rsdt, "RSDT", 4) == 0) {
+            uint32_t entries = (*(uint32_t*)(rsdt + 4) - 36) / 4;
+            uint32_t* table_ptr = (uint32_t*)(rsdt + 36);
+            for (uint32_t i = 0; i < entries; i++) {
+                uint8_t* table = (uint8_t*)(uint64_t)table_ptr[i];
+                if (memcmp_custom(table, "FACP", 4) == 0) {
+                    uint32_t pm1a_cnt = *(uint32_t*)(table + 64);
+                    outw((uint16_t)pm1a_cnt, 0x2000 | (5 << 10)); 
+                    msleep(100);
+                    outw((uint16_t)pm1a_cnt, 0x3400); 
+                }
+            }
+        }
+    }
+
+    while(1) __asm__ volatile("hlt");
 }
 
 static inline void io_wait(void) { outb(0x80, 0); }
@@ -41,11 +117,6 @@ void pic_remap(void) {
     outb(0x21, 0xFB); outb(0xA1, 0xEF);
 }
 
-struct idt_entry {
-    uint16_t base_low; uint16_t selector; uint8_t ist; uint8_t flags;
-    uint16_t base_mid; uint32_t base_high; uint32_t reserved;
-} __attribute__((packed));
-struct idt_ptr { uint16_t limit; uint64_t base; } __attribute__((packed));
 struct idt_entry idt[256];
 struct idt_ptr idtp;
 
@@ -150,13 +221,6 @@ void mouse_handler_main() {
     }
     outb(0x20, 0x20); outb(0xA0, 0x20);
 }
-
-struct multiboot_tag { uint32_t type; uint32_t size; };
-struct multiboot_tag_framebuffer {
-    uint32_t type; uint32_t size; uint64_t framebuffer_addr; uint32_t framebuffer_pitch;
-    uint32_t framebuffer_width; uint32_t framebuffer_height; uint8_t framebuffer_bpp;
-    uint8_t framebuffer_type; uint16_t reserved;
-};
 
 #pragma pack(push, 1)
 struct bmp_file_header { uint16_t bfType; uint32_t bfSize; uint16_t bfReserved1, bfReserved2; uint32_t bfOffBits; };
@@ -618,8 +682,21 @@ void kernel_main(uint64_t multiboot_addr) {
                     if (mx >= (int32_t)start_btn_x && mx <= (int32_t)(start_btn_x + btn_w) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + btn_h)) {
                         hide_cursor(fb);
                         for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
-                        if (dialog_state == 1) draw_string(screen_w/2 - 50, screen_h/2, "Restarting...", 0xFFFFFF, fb);
-                        else draw_string(screen_w/2 - 50, screen_h/2, "It is now safe to turn off your computer.", 0xFFFFFF, fb);
+                        if (dialog_state == 1) {
+                            const char* msg = "Restarting...";
+                            draw_string((screen_w - get_string_width(msg)) / 2, screen_h / 2, msg, 0xFFFFFF, fb);
+                            msleep(500);
+                            reboot();
+                        } else {
+                            const char* msg = "Shutting down...";
+                            draw_string((screen_w - get_string_width(msg)) / 2, screen_h / 2, msg, 0xFFFFFF, fb);
+                            msleep(500);
+                            shutdown(multiboot_addr);
+                            // Ha az ACPI/emulator shutdown sikertelen:
+                            for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
+                            const char* safe_msg = "It is now safe to turn off your computer.";
+                            draw_string((screen_w - get_string_width(safe_msg)) / 2, screen_h / 2, safe_msg, 0xFFFFFF, fb);
+                        }
                         while(1) __asm__ volatile("hlt");
                     }
                     // CANCEL gomb
