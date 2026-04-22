@@ -8,6 +8,7 @@ typedef int                int32_t;
 extern uint8_t wallpaper_data[];
 extern uint8_t cursor_data[];
 extern uint8_t power_icon_data[];
+extern uint8_t user_icon_data[];
 extern uint8_t arial_font_data[];
 extern uint8_t arial_font_xml_data[];
 
@@ -241,6 +242,33 @@ void draw_cursor(int32_t mx, int32_t my, struct multiboot_tag_framebuffer* fb) {
     }
 }
 
+void draw_icon_scaled(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target_h, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb) {
+    struct bmp_file_header* bfh = (struct bmp_file_header*)bmp_data;
+    struct bmp_info_header* bih = (struct bmp_info_header*)(bmp_data + sizeof(struct bmp_file_header));
+    uint8_t* pixels = bmp_data + bfh->bfOffBits;
+    int32_t w = bih->biWidth, h = bih->biHeight, abs_h = h < 0 ? -h : h;
+    uint32_t bpp = bih->biBitCount;
+    uint32_t row_size = (w * (bpp / 8) + 3) & ~3;
+
+    for (uint32_t iy = 0; iy < target_h; iy++) {
+        for (uint32_t ix = 0; ix < target_w; ix++) {
+            int32_t src_x = ix * w / target_w;
+            int32_t src_y_raw = iy * abs_h / target_h;
+            int32_t src_y = (h > 0) ? (abs_h - 1 - src_y_raw) : src_y_raw;
+            uint8_t* p = pixels + (src_y * row_size) + (src_x * (bpp / 8));
+            uint32_t color = (p[2] << 16) | (p[1] << 8) | p[0];
+            if (bpp == 32) {
+                uint8_t alpha = p[3]; if (alpha == 0) continue;
+                uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
+                uint32_t offset = (y + iy) * fb->framebuffer_pitch + (x + ix) * (fb->framebuffer_bpp / 8);
+                uint32_t bg = (fb->framebuffer_bpp == 32) ? *(uint32_t*)(screen + offset) : (screen[offset+2] << 16) | (screen[offset+1] << 8) | screen[offset];
+                color = blend_colors(bg, color, alpha);
+            }
+            draw_pixel(x + ix, y + iy, color, fb);
+        }
+    }
+}
+
 void draw_icon(uint32_t x, uint32_t y, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb) {
     struct bmp_file_header* bfh = (struct bmp_file_header*)bmp_data;
     struct bmp_info_header* bih = (struct bmp_info_header*)(bmp_data + sizeof(struct bmp_file_header));
@@ -420,10 +448,29 @@ void msleep(uint32_t ms) {
     }
 }
 
+int32_t get_char_width(char c) {
+    char search[16] = "<char id=\"";
+    int i = 10;
+    uint8_t code = (uint8_t)c;
+    if (code >= 100) { search[i++] = (code / 100) + '0'; search[i++] = ((code / 10) % 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else if (code >= 10) { search[i++] = (code / 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else { search[i++] = code + '0'; }
+    search[i++] = '\"'; search[i] = 0;
+    const char* tag = strstr_custom((const char*)arial_font_xml_data, search);
+    if (!tag) return 0;
+    return get_attr_value(tag, " xadvance=");
+}
+
+uint32_t get_string_width(const char* str) {
+    uint32_t w = 0;
+    while (*str) { w += get_char_width(*str); str++; }
+    return w;
+}
+
 void draw_power_menu(struct multiboot_tag_framebuffer* fb, int progress) {
     uint32_t margin = 20;
     uint32_t dock_h = 55, dock_x = margin, dock_w = fb->framebuffer_width - 2 * margin, dock_y = fb->framebuffer_height - dock_h - margin;
-    uint32_t menu_w = 200, menu_h = 250, menu_x = dock_x, radius = 15;
+    uint32_t menu_w = 200, menu_h = 120, menu_x = dock_x, radius = 15;
     int32_t target_y = dock_y - menu_h - 10, start_y = dock_y;
     int32_t current_y = start_y + (target_y - start_y) * progress / 100;
     int32_t area_y = target_y, area_h = start_y - target_y;
@@ -466,6 +513,48 @@ void draw_power_menu(struct multiboot_tag_framebuffer* fb, int progress) {
             draw_pixel(menu_x + x, area_y + y, menu_area_buffer[y * menu_w + x], fb);
         }
     }
+    // Szövegeket CSAK a puffer kirajzolása UTÁN rajzoljuk
+    if (progress == 100) {
+        draw_string(menu_x + 20, current_y + 20, "Restart", 0x333333, fb);
+        for(uint32_t x = menu_x + 10; x < menu_x + menu_w - 10; x++) draw_pixel(x, current_y + 60, 0xBBBBBB, fb);
+        draw_string(menu_x + 20, current_y + 80, "Shutdown", 0x333333, fb);
+    }
+}
+
+void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const char* msg) {
+    uint32_t msg_w = get_string_width(msg);
+    uint32_t w = msg_w + 80; if (w < 350) w = 350;
+    uint32_t h = 220, x = (fb->framebuffer_width - w) / 2, y = (fb->framebuffer_height - h) / 2, radius = 15;
+    for (uint32_t iy = y; iy < y + h; iy++) {
+        for (uint32_t ix = x; ix < x + w; ix++) {
+            uint8_t alpha = 245; uint32_t dx = 0, dy = 0; int is_corner = 0;
+            if (ix < x + radius && iy < y + radius) { dx = (x + radius) - ix; dy = (y + radius) - iy; is_corner = 1; }
+            else if (ix > x + w - radius && iy < y + radius) { dx = ix - (x + w - radius); dy = (y + radius) - iy; is_corner = 1; }
+            else if (ix < x + radius && iy > y + h - radius) { dx = (x + radius) - ix; dy = iy - (y + h - radius); is_corner = 1; }
+            else if (ix > x + w - radius && iy > y + h - radius) { dx = ix - (x + w - radius); dy = iy - (y + h - radius); is_corner = 1; }
+            if (is_corner) { if (dx*dx + dy*dy >= radius * radius) alpha = 0; }
+            if (alpha > 0) draw_pixel(ix, iy, blend_colors(get_wallpaper_pixel_fast(ix, iy, fb), 0xFFFFFF, alpha), fb);
+        }
+    }
+    draw_string(x + 25, y + 25, title, 0x222222, fb);
+    for(uint32_t ix = x + 10; ix < x + w - 10; ix++) draw_pixel(ix, y + 65, 0xBBBBBB, fb);
+    draw_string(x + (w - msg_w) / 2, y + 95, msg, 0x444444, fb);
+    
+    // Gombok: Yes (Pirosas), Cancel (Szürke) - Középre rendezve
+    uint32_t btn_w = 120, btn_h = 45, spacing = 20;
+    uint32_t total_btns_w = 2 * btn_w + spacing;
+    uint32_t start_btn_x = x + (w - total_btns_w) / 2;
+    uint32_t btn_y = y + 145;
+
+    // YES gomb
+    for(uint32_t iy = 0; iy < btn_h; iy++) for(uint32_t ix = 0; ix < btn_w; ix++) draw_pixel(start_btn_x + ix, btn_y + iy, 0xFF5555, fb);
+    uint32_t yes_w = get_string_width("Yes");
+    draw_string(start_btn_x + (btn_w - yes_w) / 2, btn_y + (btn_h - 18) / 2, "Yes", 0xFFFFFF, fb);
+
+    // CANCEL gomb
+    for(uint32_t iy = 0; iy < btn_h; iy++) for(uint32_t ix = 0; ix < btn_w; ix++) draw_pixel(start_btn_x + btn_w + spacing + ix, btn_y + iy, 0xDDDDDD, fb);
+    uint32_t cancel_w = get_string_width("Cancel");
+    draw_string(start_btn_x + btn_w + spacing + (btn_w - cancel_w) / 2, btn_y + (btn_h - 18) / 2, "Cancel", 0x333333, fb);
 }
 
 void kernel_main(uint64_t multiboot_addr) {
@@ -496,6 +585,7 @@ void kernel_main(uint64_t multiboot_addr) {
         int32_t icon_x = dock_x + 15, icon_y = dock_y + (dock_h - icon_h) / 2;
         int power_menu_open = 0;
         int power_menu_progress = 0;
+        int dialog_state = 0; // 0: None, 1: Restart, 2: Shutdown
         uint8_t last_min = 255;
 
         while(1) { 
@@ -505,15 +595,58 @@ void kernel_main(uint64_t multiboot_addr) {
                 last_min = m;
                 hide_cursor(fb);
                 draw_dock(fb);
+                if (dialog_state == 1) draw_dialog(fb, "Restart", "Are you sure you want to restart the system?");
+                else if (dialog_state == 2) draw_dialog(fb, "Shutdown", "Are you sure you want to shutdown the system?");
             }
 
             int32_t mx = mouse_x, my = mouse_y;
             if (mouse_clicked) {
                 mouse_clicked = 0;
-                uint32_t menu_w = 200, menu_h = 250, menu_x = dock_x, menu_y = dock_y - menu_h - 10;
-                if (mx >= icon_x && mx <= icon_x + icon_w && my >= icon_y && my <= icon_y + icon_h) power_menu_open = !power_menu_open;
+                uint32_t menu_w = 200, menu_h = 120, menu_x = dock_x, menu_y = dock_y - menu_h - 10;
+                
+                if (dialog_state != 0) {
+                    const char* msg = (dialog_state == 1) ? "Are you sure you want to restart the system?" : "Are you sure you want to shutdown the system?";
+                    uint32_t msg_w = get_string_width(msg);
+                    uint32_t dw = msg_w + 80; if (dw < 350) dw = 350;
+                    uint32_t dh = 220, dx = (fb->framebuffer_width - dw) / 2, dy = (fb->framebuffer_height - dh) / 2;
+                    uint32_t btn_w = 120, btn_h = 45, spacing = 20;
+                    uint32_t total_btns_w = 2 * btn_w + spacing;
+                    uint32_t start_btn_x = dx + (dw - total_btns_w) / 2;
+                    uint32_t btn_y = dy + 145;
+
+                    // YES gomb
+                    if (mx >= (int32_t)start_btn_x && mx <= (int32_t)(start_btn_x + btn_w) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + btn_h)) {
+                        hide_cursor(fb);
+                        for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
+                        if (dialog_state == 1) draw_string(screen_w/2 - 50, screen_h/2, "Restarting...", 0xFFFFFF, fb);
+                        else draw_string(screen_w/2 - 50, screen_h/2, "It is now safe to turn off your computer.", 0xFFFFFF, fb);
+                        while(1) __asm__ volatile("hlt");
+                    }
+                    // CANCEL gomb
+                    else if (mx >= (int32_t)(start_btn_x + btn_w + spacing) && mx <= (int32_t)(start_btn_x + 2 * btn_w + spacing) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + btn_h)) {
+                        dialog_state = 0;
+                        hide_cursor(fb);
+                        for(uint32_t y = dy; y < dy + dh; y++) for(uint32_t x = dx; x < dx + dw; x++) draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb);
+                        draw_dock(fb);
+                    }
+                }
+                else if (mx >= icon_x && mx <= icon_x + icon_w && my >= icon_y && my <= icon_y + icon_h) power_menu_open = !power_menu_open;
                 else if (power_menu_open) {
-                    if (!(mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + menu_w) && my >= (int32_t)menu_y && my <= (int32_t)(menu_y + menu_h))) power_menu_open = 0;
+                    // Restart opció: current_y + 20, hit area
+                    if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + menu_w) && my >= (int32_t)(menu_y + 10) && my <= (int32_t)(menu_y + 60)) {
+                        dialog_state = 1; power_menu_open = 0; power_menu_progress = 0;
+                        hide_cursor(fb);
+                        draw_power_menu(fb, 0);
+                        draw_dialog(fb, "Restart", "Are you sure you want to restart the system?");
+                    }
+                    // Shutdown opció: current_y + 80, hit area
+                    else if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + menu_w) && my >= (int32_t)(menu_y + 70) && my <= (int32_t)(menu_y + 120)) {
+                        dialog_state = 2; power_menu_open = 0; power_menu_progress = 0;
+                        hide_cursor(fb);
+                        draw_power_menu(fb, 0);
+                        draw_dialog(fb, "Shutdown", "Are you sure you want to shutdown the system?");
+                    }
+                    else if (!(mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + menu_w) && my >= (int32_t)menu_y && my <= (int32_t)(menu_y + menu_h))) power_menu_open = 0;
                 }
             }
             if (power_menu_open && power_menu_progress < 100) {
