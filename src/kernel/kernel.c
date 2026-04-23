@@ -362,24 +362,6 @@ uint8_t read_rtc_reg(uint8_t reg) {
     return inb(0x71);
 }
 
-void get_time(uint8_t* h, uint8_t* m) {
-    while (read_rtc_reg(0x0A) & 0x80);
-    uint8_t s = read_rtc_reg(0x00);
-    *m = read_rtc_reg(0x02);
-    *h = read_rtc_reg(0x04);
-    uint8_t registerB = read_rtc_reg(0x0B);
-    if (!(registerB & 0x04)) {
-        *m = (*m & 0x0F) + ((*m / 16) * 10);
-        *h = ((*h & 0x0F) + (((*h & 0x70) / 16) * 10)) | (*h & 0x80);
-    }
-
-    if (!(registerB & 0x02) && (*h & 0x80)) {
-        *h = ((*h & 0x7F) + 12) % 24;
-    }
-
-    *h = (*h + 2) % 24;
-}
-
 const char* strstr_custom(const char* haystack, const char* needle) {
     if (!*needle) return haystack;
     for (; *haystack; haystack++) {
@@ -390,6 +372,59 @@ const char* strstr_custom(const char* haystack, const char* needle) {
         }
     }
     return 0;
+}
+
+// Segédfüggvény a környezet azonosításához
+int is_qemu() {
+    uint32_t eax, ebx, ecx, edx;
+    char brand[49];
+    brand[48] = 0;
+
+    // A processzor nevének lekérése (Brand String)
+    for (uint32_t i = 0; i < 3; i++) {
+        __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0x80000002 + i));
+        ((uint32_t*)brand)[i * 4 + 0] = eax;
+        ((uint32_t*)brand)[i * 4 + 1] = ebx;
+        ((uint32_t*)brand)[i * 4 + 2] = ecx;
+        ((uint32_t*)brand)[i * 4 + 3] = edx;
+    }
+
+    // Ha a processzor nevében benne van a QEMU vagy KVM, akkor emulátorban vagyunk
+    if (strstr_custom(brand, "QEMU") || strstr_custom(brand, "KVM")) return 1;
+    
+    // Hypervisor azonosító ellenőrzése (ha a brand string nem lenne egyértelmű)
+    __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0x40000000));
+    if (ebx == 0x4b564d4b || ebx == 0x47435447) return 1; // "KVMK" vagy "TCGT"
+    
+    return 0;
+}
+
+void get_time(uint8_t* h, uint8_t* m) {
+    // Várakozás, amíg az RTC frissít
+    while (read_rtc_reg(0x0A) & 0x80);
+
+    *m = read_rtc_reg(0x02);
+    *h = read_rtc_reg(0x04);
+    uint8_t registerB = read_rtc_reg(0x0B);
+
+    // BCD átalakítás binárissá, ha szükséges
+    if (!(registerB & 0x04)) {
+        *m = (*m & 0x0F) + ((*m / 16) * 10);
+        *h = ((*h & 0x0F) + (((*h & 0x70) / 16) * 10)) | (*h & 0x80);
+    }
+
+    // 12 órás formátum átalakítása 24 órásra, ha szükséges
+    if (!(registerB & 0x02) && (*h & 0x80)) {
+        *h = ((*h & 0x7F) + 12) % 24;
+    }
+
+    // AUTOMATIKUS IDŐZÓNA KEZELÉS:
+    // A QEMU alapértelmezésben UTC időt küld, ezért ott kell a +2 óra korrekció.
+    // A VirtualBox és a legtöbb fizikai számítógép (BIOS/UEFI) alapból a helyi időt (Local Time) tárolja,
+    // így azokon nincs szükség további eltolásra.
+    if (is_qemu()) {
+        *h = (*h + 2) % 24;
+    }
 }
 
 int32_t atoi_custom(const char* s) {
