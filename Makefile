@@ -24,10 +24,13 @@ prep:
 compile:
 	$(AS) -f elf64 $(SRCDIR)/boot/boot.asm -o $(BUILDDIR)/boot.o
 	$(CC) $(CFLAGS) -c $(SRCDIR)/kernel/kernel.c -o $(BUILDDIR)/kernel.o
+	$(CC) $(CFLAGS) -c $(SRCDIR)/drivers/pci.c -o $(BUILDDIR)/pci.o
+	$(CC) $(CFLAGS) -c $(SRCDIR)/drivers/e1000.c -o $(BUILDDIR)/e1000.o
+	$(CC) $(CFLAGS) -c $(SRCDIR)/net/net.c -o $(BUILDDIR)/net.o
 
 # Linker
 link:
-	$(LD) $(LDFLAGS) -static -o $(BUILDDIR)/kernel.bin $(BUILDDIR)/boot.o $(BUILDDIR)/kernel.o
+	$(LD) $(LDFLAGS) -static -o $(BUILDDIR)/kernel.bin $(BUILDDIR)/boot.o $(BUILDDIR)/kernel.o $(BUILDDIR)/pci.o $(BUILDDIR)/e1000.o $(BUILDDIR)/net.o
 
 # Building ISO
 iso:
@@ -44,4 +47,4 @@ clean:
 
 # Run
 run:
-	qemu-system-x86_64 -cdrom animos.iso -m 1G
+	qemu-system-x86_64 -cdrom animos.iso -m 1G -net nic,model=e1000 -net user

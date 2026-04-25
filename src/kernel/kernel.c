@@ -1,9 +1,7 @@
-typedef unsigned char      uint8_t;
-typedef char               int8_t;
-typedef unsigned short     uint16_t;
-typedef unsigned int       uint32_t;
-typedef unsigned long long uint64_t;
-typedef int                int32_t;
+#include "types.h"
+#include "../drivers/pci.h"
+#include "../drivers/e1000.h"
+#include "../net/net.h"
 
 struct multiboot_tag { uint32_t type; uint32_t size; };
 struct multiboot_tag_framebuffer {
@@ -29,6 +27,7 @@ uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
 int32_t cursor_w = 32;
 int32_t cursor_h = 32;
+int net_status = 0; // 0: None, 1: Found, 2: Sent, 3: Synced
 
 void msleep(uint32_t ms);
 
@@ -400,6 +399,15 @@ int is_qemu() {
 }
 
 void get_time(uint8_t* h, uint8_t* m) {
+    uint64_t ntp_time = ntp_get_time();
+    if (ntp_time != 0) {
+        *h = (ntp_time / 3600) % 24;
+        *m = (ntp_time / 60) % 60;
+        // Helyi idő korrekció (például +2 óra)
+        *h = (*h + 2) % 24;
+        return;
+    }
+
     // Várakozás, amíg az RTC frissít
     while (read_rtc_reg(0x0A) & 0x80);
 
@@ -492,6 +500,34 @@ void draw_string(uint32_t x, uint32_t y, const char* str, uint32_t color, struct
     }
 }
 
+void uint_to_hex(uint64_t n, char* out, int digits) {
+    const char* hex = "0123456789ABCDEF";
+    for (int i = 0; i < digits; i++) {
+        out[digits - 1 - i] = hex[n & 0xF];
+        n >>= 4;
+    }
+    out[digits] = 0;
+}
+
+int32_t get_char_width(char c) {
+    char search[16] = "<char id=\"";
+    int i = 10;
+    uint8_t code = (uint8_t)c;
+    if (code >= 100) { search[i++] = (code / 100) + '0'; search[i++] = ((code / 10) % 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else if (code >= 10) { search[i++] = (code / 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else { search[i++] = code + '0'; }
+    search[i++] = '\"'; search[i] = 0;
+    const char* tag = strstr_custom((const char*)arial_font_xml_data, search);
+    if (!tag) return 0;
+    return get_attr_value(tag, " xadvance=");
+}
+
+uint32_t get_string_width(const char* str) {
+    uint32_t w = 0;
+    while (*str) { w += get_char_width(*str); str++; }
+    return w;
+}
+
 void draw_dock(struct multiboot_tag_framebuffer* fb) {
     uint32_t margin = 20;
     uint32_t dock_h = 55, dock_x = margin, dock_w = fb->framebuffer_width - 2 * margin, dock_y = fb->framebuffer_height - dock_h - margin, radius = 25, dock_color = 0xFFFFFF;
@@ -518,7 +554,27 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
 
     uint8_t h, m; get_time(&h, &m);
     char time_str[6] = { (h/10)+'0', (h%10)+'0', ':', (m/10)+'0', (m%10)+'0', 0 };
-    draw_string(dock_x + dock_w - 80, dock_y + 17, time_str, 0x333333, fb);
+    uint32_t time_x = dock_x + dock_w - 80;
+    uint32_t time_y = dock_y + 17;
+    draw_string(time_x, time_y, time_str, 0x333333, fb);
+
+    extern int received_any;
+    const char* status_str = "";
+    uint32_t status_color = 0x555555;
+
+    if (net_status == 3) { status_str = "NTP OK"; status_color = 0x00AA00; }
+    else if (net_status == 2) {
+        if (received_any) { status_str = "RECV ANY"; status_color = 0xAA00AA; }
+        else { status_str = "SEND NTP"; status_color = 0xAAAA00; }
+    }
+    else if (net_status == 1) { status_str = "LINK OK"; status_color = 0xAA0000; }
+    else if (net_status == 6) { status_str = "NO LINK"; status_color = 0xAA5500; }
+    else if (net_status == 4) { status_str = "UNKNOWN PCI"; status_color = 0x0000AA; }
+    else if (net_status == 5) { status_str = "PCI SCAN"; status_color = 0x777777; }
+    else { status_str = "NO NIC"; status_color = 0x555555; }
+
+    uint32_t status_x = time_x - get_string_width(status_str) - 20;
+    draw_string(status_x, time_y, status_str, status_color, fb);
 }
 
 void hide_cursor(struct multiboot_tag_framebuffer* fb) {
@@ -545,25 +601,6 @@ void msleep(uint32_t ms) {
         outb(0x61, ctrl | 1); // PIT2 gate on, speaker off
         while (!(inb(0x61) & 0x20)); // Várakozás, amíg a PIT2 kimenete magas lesz (lefutott)
     }
-}
-
-int32_t get_char_width(char c) {
-    char search[16] = "<char id=\"";
-    int i = 10;
-    uint8_t code = (uint8_t)c;
-    if (code >= 100) { search[i++] = (code / 100) + '0'; search[i++] = ((code / 10) % 10) + '0'; search[i++] = (code % 10) + '0'; }
-    else if (code >= 10) { search[i++] = (code / 10) + '0'; search[i++] = (code % 10) + '0'; }
-    else { search[i++] = code + '0'; }
-    search[i++] = '\"'; search[i] = 0;
-    const char* tag = strstr_custom((const char*)arial_font_xml_data, search);
-    if (!tag) return 0;
-    return get_attr_value(tag, " xadvance=");
-}
-
-uint32_t get_string_width(const char* str) {
-    uint32_t w = 0;
-    while (*str) { w += get_char_width(*str); str++; }
-    return w;
 }
 
 void draw_power_menu(struct multiboot_tag_framebuffer* fb, int progress) {
@@ -672,10 +709,27 @@ void kernel_main(uint64_t multiboot_addr) {
         idt_load(&idtp);
         mouse_init();
         init_wallpaper_info();
+
         for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
             for (uint32_t x = 0; x < fb->framebuffer_width; x++) { draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb); }
         }
         draw_dock(fb);
+
+        // Hálózat inicializálása
+        net_status = 5; draw_dock(fb); // PCI Scan Start (Fehér)
+        struct pci_device net_dev;
+        if (pci_find_device(0xFFFF, 0xFFFF, &net_dev)) {
+            if (net_dev.vendor_id == 0x8086 && (net_dev.device_id == 0x100E || net_dev.device_id == 0x100F || net_dev.device_id == 0x10D3)) {
+                if (e1000_init(&net_dev) == 0) {
+                    net_status = 1; draw_dock(fb); // Intel E1000 kész (Piros)
+                    net_init((10) | (0 << 8) | (2 << 16) | (15 << 24));
+                }
+            } else {
+                net_status = 4; draw_dock(fb); // Más kártya (Kék)
+            }
+        } else {
+            net_status = 0; draw_dock(fb); // Semmi (Nincs pötty)
+        }
         uint32_t margin = 20;
         uint32_t dock_h = 55, dock_x = margin, dock_w = fb->framebuffer_width - 2 * margin, dock_y = fb->framebuffer_height - dock_h - margin;
         struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
@@ -686,16 +740,40 @@ void kernel_main(uint64_t multiboot_addr) {
         int power_menu_progress = 0;
         int dialog_state = 0; // 0: None, 1: Restart, 2: Shutdown
         uint8_t last_min = 255;
+        last_mouse_x = -1; last_mouse_y = -1; // Reset state
+
+        uint32_t ntp_retry_timer = 0;
+        int last_displayed_status = -1;
 
         while(1) { 
+            // Link állapot ellenőrzése
+            if (net_status != 0 && net_status != 4 && net_status != 5) {
+                if (!e1000_link_up()) net_status = 6;
+                else if (net_status == 6) net_status = 1;
+            }
+
+            // NTP szinkronizáció újrapróbálkozás
+            if (net_status == 1 || (net_status == 2 && ntp_retry_timer == 0) || (net_status == 3 && ntp_retry_timer == 0)) {
+                if (e1000_link_up()) {
+                    ntp_sync((162) | (159 << 8) | (200 << 16) | (1 << 24));
+                    if (net_status != 3) net_status = 2;
+                    ntp_retry_timer = 2000; // Kb. 5-10 másodpercenként küldünk egyet
+                }
+            }
+            if (ntp_retry_timer > 0) ntp_retry_timer--;
+
             uint8_t h, m;
             get_time(&h, &m);
-            if (m != last_min) {
+            
+            // Frissítés, ha változik a perc VAGY a hálózati állapot
+            if (m != last_min || net_status != last_displayed_status) {
                 last_min = m;
+                last_displayed_status = net_status;
                 hide_cursor(fb);
                 draw_dock(fb);
                 if (dialog_state == 1) draw_dialog(fb, "Restart", "Are you sure you want to restart the system?");
                 else if (dialog_state == 2) draw_dialog(fb, "Shutdown", "Are you sure you want to shutdown the system?");
+                draw_cursor(mouse_x, mouse_y, fb);
             }
 
             int32_t mx = mouse_x, my = mouse_y;
@@ -775,6 +853,7 @@ void kernel_main(uint64_t multiboot_addr) {
                 msleep(5);
             }
             draw_cursor(mx, my, fb); 
+            net_poll();
             for(int i = 0; i < 500; i++) __asm__ volatile("pause"); 
         }
     }
