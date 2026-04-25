@@ -59,13 +59,19 @@ int e1000_init(struct pci_device* dev) {
     // 1. Full Reset
     write_reg(E1000_REG_IMC, 0xFFFFFFFF);
     write_reg(E1000_REG_CTRL, read_reg(E1000_REG_CTRL) | (1 << 26)); // RST
-    uint32_t timeout = 10000;
-    while((read_reg(E1000_REG_CTRL) & (1 << 26)) && timeout--) __asm__ volatile("pause");
-
-    // 2. Link setup
-    write_reg(E1000_REG_CTRL, (1 << 6) | (1 << 5) | (1 << 31)); // SLU, ASDE, PHY_RST
+    msleep(10);
+    
+    // 2. Link setup - SLU (bit 6), ASDE (bit 5)
+    uint32_t ctrl = read_reg(E1000_REG_CTRL);
+    ctrl |= (1 << 6) | (1 << 5); // SLU + ASDE
+    ctrl &= ~(1 << 31); // Biztosítsuk, hogy a PHY_RST bit ne maradjon kint
+    write_reg(E1000_REG_CTRL, ctrl);
+    
     write_reg(E1000_REG_IMC, 0xFFFFFFFF);
     read_reg(E1000_REG_ICR); 
+
+    // Flow Control nullázása (VirtualBox szereti)
+    write_reg(0x00028, 0); write_reg(0x0002C, 0); write_reg(0x00030, 0); write_reg(0x00170, 0);
 
     for(int i = 0; i < 128; i++) write_reg(0x05200 + (i * 4), 0);
 
