@@ -559,10 +559,13 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
     draw_string(time_x, time_y, time_str, 0x333333, fb);
 
     extern int received_any;
+    extern int packet_counter;
     const char* status_str = "";
     uint32_t status_color = 0x555555;
 
     if (net_status == 3) { status_str = "NTP OK"; status_color = 0x00AA00; }
+    else if (net_status == 7) { status_str = "DHCP..."; status_color = 0xAAAA00; }
+    else if (net_status == 8) { status_str = "DHCP REQ"; status_color = 0xAAAA00; }
     else if (net_status == 2) {
         if (received_any) { status_str = "RECV ANY"; status_color = 0xAA00AA; }
         else { status_str = "SEND NTP"; status_color = 0xAAAA00; }
@@ -575,6 +578,36 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
 
     uint32_t status_x = time_x - get_string_width(status_str) - 20;
     draw_string(status_x, time_y, status_str, status_color, fb);
+
+    // Debug: Packet counter
+    char pkt_str[16];
+    int ppos = 0;
+    int pc = packet_counter;
+    if (pc == 0) pkt_str[ppos++] = '0';
+    else {
+        char tmp[10]; int ti = 0;
+        while(pc > 0) { tmp[ti++] = (pc % 10) + '0'; pc /= 10; }
+        while(ti > 0) pkt_str[ppos++] = tmp[--ti];
+    }
+    pkt_str[ppos] = 0;
+    draw_string(dock_x + 100, time_y, "PKTS:", 0x555555, fb);
+    draw_string(dock_x + 150, time_y, pkt_str, 0x333333, fb);
+
+    if (net_dhcp_ok()) {
+        uint32_t ip = net_get_ip();
+        char ip_str[20];
+        int pos = 0;
+        for(int i=0; i<4; i++) {
+            uint8_t part = (ip >> (i*8)) & 0xFF;
+            if(part >= 100) ip_str[pos++] = (part/100)+'0';
+            if(part >= 10) ip_str[pos++] = ((part/10)%10)+'0';
+            ip_str[pos++] = (part%10)+'0';
+            if(i < 3) ip_str[pos++] = '.';
+        }
+        ip_str[pos] = 0;
+        uint32_t ip_x = status_x - get_string_width(ip_str) - 30;
+        draw_string(ip_x, time_y, ip_str, 0x333333, fb);
+    }
 }
 
 void hide_cursor(struct multiboot_tag_framebuffer* fb) {
@@ -590,16 +623,14 @@ void hide_cursor(struct multiboot_tag_framebuffer* fb) {
 
 void msleep(uint32_t ms) {
     if (ms == 0) return;
-    uint32_t total_ticks = ms * 1193; // PIT frekvencia ~1.193 MHz, tehát 1ms kb 1193 tick
-    while (total_ticks > 0) {
-        uint16_t ticks = (total_ticks > 0xFFFF) ? 0xFFFF : (uint16_t)total_ticks;
-        total_ticks -= ticks;
-        outb(0x43, 0xB0); // Channel 2, LSB/MSB, Mode 0 (Interrupt on terminal count)
-        outb(0x42, ticks & 0xFF);
-        outb(0x42, (ticks >> 8) & 0xFF);
+    for (uint32_t i = 0; i < ms; i++) {
+        outb(0x43, 0xB0); // Channel 2, LSB/MSB, Mode 0
+        outb(0x42, 1193 & 0xFF); // ~1ms (1193.18 Hz)
+        outb(0x42, (1193 >> 8) & 0xFF);
         uint8_t ctrl = inb(0x61) & 0xFC;
-        outb(0x61, ctrl | 1); // PIT2 gate on, speaker off
-        while (!(inb(0x61) & 0x20)); // Várakozás, amíg a PIT2 kimenete magas lesz (lefutott)
+        outb(0x61, ctrl);       // Gate 2 low
+        outb(0x61, ctrl | 1);   // Gate 2 high to start
+        while (!(inb(0x61) & 0x20)); // Wait for OUT2 (Bit 5) to go HIGH
     }
 }
 
@@ -723,6 +754,7 @@ void kernel_main(uint64_t multiboot_addr) {
                 if (e1000_init(&net_dev) == 0) {
                     net_status = 1; draw_dock(fb); // Intel E1000 kész (Piros)
                     net_init((10) | (0 << 8) | (2 << 16) | (15 << 24));
+                    msleep(500); // Várjunk, amíg a link stabilizálódik a bridge-en
                 }
             } else {
                 net_status = 4; draw_dock(fb); // Más kártya (Kék)
@@ -744,20 +776,34 @@ void kernel_main(uint64_t multiboot_addr) {
 
         uint32_t ntp_retry_timer = 0;
         int last_displayed_status = -1;
+        uint32_t link_stable_count = 0;
 
         while(1) { 
-            // Link állapot ellenőrzése
-            if (net_status != 0 && net_status != 4 && net_status != 5) {
-                if (!e1000_link_up()) net_status = 6;
-                else if (net_status == 6) net_status = 1;
+            // Link állapot ellenőrzése stabilitási számlálóval
+            int current_link = e1000_link_up();
+            if (current_link) {
+                if (link_stable_count < 10) link_stable_count++;
+            } else {
+                link_stable_count = 0;
             }
 
-            // NTP szinkronizáció újrapróbálkozás
-            if (net_status == 1 || (net_status == 2 && ntp_retry_timer == 0) || (net_status == 3 && ntp_retry_timer == 0)) {
-                if (e1000_link_up()) {
+            if (net_status != 0 && net_status != 4 && net_status != 5) {
+                if (link_stable_count < 5) {
+                    if (net_status != 6) net_status = 6;
+                } else {
+                    if (net_status == 6) net_status = 1;
+                }
+            }
+
+            // NTP szinkronizáció / DHCP folyamat (ritkított próbálkozás)
+            if (net_status == 1 || (net_status == 2 && ntp_retry_timer == 0) || (net_status == 3 && ntp_retry_timer == 0) || (net_status == 7 && ntp_retry_timer == 0) || (net_status == 8 && ntp_retry_timer == 0)) {
+                if (link_stable_count >= 5) {
+                    if (!net_dhcp_ok()) {
+                        if (net_status != 8) net_status = 7;
+                    }
                     ntp_sync((162) | (159 << 8) | (200 << 16) | (1 << 24));
-                    if (net_status != 3) net_status = 2;
-                    ntp_retry_timer = 2000; // Kb. 5-10 másodpercenként küldünk egyet
+                    if (net_status == 1) net_status = 2;
+                    ntp_retry_timer = 500; // 500 * 10ms = 5 másodperc várakozás
                 }
             }
             if (ntp_retry_timer > 0) ntp_retry_timer--;
@@ -854,7 +900,7 @@ void kernel_main(uint64_t multiboot_addr) {
             }
             draw_cursor(mx, my, fb); 
             net_poll();
-            for(int i = 0; i < 500; i++) __asm__ volatile("pause"); 
+            msleep(10); 
         }
     }
     while(1) { __asm__ volatile("hlt"); }

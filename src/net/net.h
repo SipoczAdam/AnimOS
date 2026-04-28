@@ -29,6 +29,25 @@ struct udp_header {
     uint16_t chksum;
 } __attribute__((packed));
 
+struct dhcp_packet {
+    uint8_t op;
+    uint8_t htype;
+    uint8_t hlen;
+    uint8_t hops;
+    uint32_t xid;
+    uint16_t secs;
+    uint16_t flags;
+    uint32_t ciaddr;
+    uint32_t yiaddr;
+    uint32_t siaddr;
+    uint32_t giaddr;
+    uint8_t chaddr[16];
+    uint8_t sname[64];
+    uint8_t file[128];
+    uint32_t cookie;
+    uint8_t options[312];
+} __attribute__((packed));
+
 struct ntp_packet {
     uint8_t li_vn_mode;
     uint8_t stratum;
@@ -52,5 +71,7 @@ void net_poll();
 void arp_request(uint32_t target_ip);
 void ntp_sync(uint32_t ntp_server_ip);
 uint64_t ntp_get_time();
+uint32_t net_get_ip();
+int net_dhcp_ok();
 
 #endif
