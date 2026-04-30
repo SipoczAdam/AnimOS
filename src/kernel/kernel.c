@@ -113,7 +113,7 @@ void pic_remap(void) {
     outb(0xA1, 0x02); io_wait();
     outb(0x21, 0x01); io_wait();
     outb(0xA1, 0x01); io_wait();
-    outb(0x21, 0xFB); outb(0xA1, 0xEF);
+    outb(0x21, 0xF9); outb(0xA1, 0xEF);
 }
 
 struct idt_entry idt[256];
@@ -128,10 +128,27 @@ void idt_set_gate(uint8_t num, uint64_t base, uint16_t sel, uint8_t flags) {
 
 extern void idt_load(struct idt_ptr* ptr);
 extern void isr_mouse_stub(void);
+extern void isr_keyboard_stub(void);
 
 volatile int32_t mouse_x = 512, mouse_y = 384;
 volatile uint8_t mouse_left_button = 0;
 volatile uint8_t mouse_clicked = 0;
+volatile int power_menu_open = 0;
+volatile int power_menu_progress = 0;
+
+void keyboard_handler_main() {
+    static int e0_received = 0;
+    uint8_t scancode = inb(0x60);
+    if (scancode == 0xE0) {
+        e0_received = 1;
+    } else {
+        if (scancode == 0x5B || scancode == 0x5C) { // Windows key Make
+            power_menu_open = !power_menu_open;
+        }
+        e0_received = 0;
+    }
+    outb(0x20, 0x20);
+}
 uint8_t mouse_cycle = 0;
 uint8_t mouse_byte[3];
 
@@ -720,6 +737,7 @@ void kernel_main(uint64_t multiboot_addr) {
         mouse_x = screen_w / 2; mouse_y = screen_h / 2;
         pic_remap();
         for (int i = 0; i < 256; i++) idt_set_gate(i, 0, 0, 0);
+        idt_set_gate(33, (uint64_t)isr_keyboard_stub, 0x08, 0x8E);
         idt_set_gate(44, (uint64_t)isr_mouse_stub, 0x08, 0x8E);
         idtp.limit = sizeof(idt) - 1; idtp.base = (uint64_t)&idt;
         idt_load(&idtp);
@@ -753,8 +771,6 @@ void kernel_main(uint64_t multiboot_addr) {
         int32_t icon_h = icon_bih->biHeight < 0 ? -icon_bih->biHeight : icon_bih->biHeight;
         int32_t icon_w = icon_bih->biWidth;
         int32_t icon_x = dock_x + 15, icon_y = dock_y + (dock_h - icon_h) / 2;
-        int power_menu_open = 0;
-        int power_menu_progress = 0;
         int dialog_state = 0; // 0: None, 1: Restart, 2: Shutdown
         uint8_t last_min = 255;
         last_mouse_x = -1; last_mouse_y = -1; // Reset state
@@ -871,13 +887,13 @@ void kernel_main(uint64_t multiboot_addr) {
                 }
             }
             if (power_menu_open && power_menu_progress < 100) {
-                power_menu_progress += 10; if (power_menu_progress > 100) power_menu_progress = 100;
+                power_menu_progress += 20; if (power_menu_progress > 100) power_menu_progress = 100;
                 hide_cursor(fb);
                 draw_power_menu(fb, power_menu_progress);
                 draw_cursor(mx, my, fb);
                 msleep(5);
             } else if (!power_menu_open && power_menu_progress > 0) {
-                power_menu_progress -= 10; if (power_menu_progress < 0) power_menu_progress = 0;
+                power_menu_progress -= 20; if (power_menu_progress < 0) power_menu_progress = 0;
                 hide_cursor(fb);
                 draw_power_menu(fb, power_menu_progress);
                 draw_cursor(mx, my, fb);
