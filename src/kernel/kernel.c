@@ -559,7 +559,6 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
     draw_string(time_x, time_y, time_str, 0x333333, fb);
 
     extern int received_any;
-    extern int packet_counter;
     const char* status_str = "";
     uint32_t status_color = 0x555555;
 
@@ -578,20 +577,6 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
 
     uint32_t status_x = time_x - get_string_width(status_str) - 20;
     draw_string(status_x, time_y, status_str, status_color, fb);
-
-    // Debug: Packet counter
-    char pkt_str[16];
-    int ppos = 0;
-    int pc = packet_counter;
-    if (pc == 0) pkt_str[ppos++] = '0';
-    else {
-        char tmp[10]; int ti = 0;
-        while(pc > 0) { tmp[ti++] = (pc % 10) + '0'; pc /= 10; }
-        while(ti > 0) pkt_str[ppos++] = tmp[--ti];
-    }
-    pkt_str[ppos] = 0;
-    draw_string(dock_x + 100, time_y, "PKTS:", 0x555555, fb);
-    draw_string(dock_x + 150, time_y, pkt_str, 0x333333, fb);
 
     if (net_dhcp_ok()) {
         uint32_t ip = net_get_ip();

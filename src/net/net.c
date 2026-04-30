@@ -9,10 +9,8 @@ static uint32_t dhcp_server_ip = 0;
 static uint64_t last_ntp_timestamp = 0;
 static uint32_t global_xid_counter = 0x12345678;
 static uint32_t last_xid = 0;
-int received_any = 0; 
-int packet_counter = 0;
+int received_any = 0;
 int dhcp_ok = 0;
-
 static inline uint16_t swap16(uint16_t v) { return (v << 8) | (v >> 8); }
 static inline uint32_t swap32(uint32_t v) {
     return ((v & 0xFF) << 24) | ((v & 0xFF00) << 8) | ((v & 0xFF0000) >> 8) | ((v & 0xFF000000) >> 24);
@@ -176,7 +174,6 @@ void net_poll() {
     uint8_t buffer[2048];
     uint16_t len;
     while(e1000_receive_packet(buffer, &len)) {
-        packet_counter++;
         received_any = 1;
         struct ethernet_header* eth = (struct ethernet_header*)buffer;
         
