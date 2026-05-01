@@ -608,6 +608,28 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
     }
 }
 
+void draw_status_bar(struct multiboot_tag_framebuffer* fb) {
+    uint32_t margin = 20;
+    uint32_t bar_h = 30, bar_w = 200, bar_x = fb->framebuffer_width - margin - bar_w, bar_y = margin, radius = 12, bar_color = 0xFFFFFF;
+    for (uint32_t y = bar_y; y < bar_y + bar_h; y++) {
+        for (uint32_t x = bar_x; x < bar_x + bar_w; x++) {
+            uint8_t alpha = 200; uint32_t dx = 0, dy = 0; int is_corner = 0;
+            if (x < bar_x + radius && y < bar_y + radius) { dx = (bar_x + radius) - x; dy = (bar_y + radius) - y; is_corner = 1; }
+            else if (x > bar_x + bar_w - radius && y < bar_y + radius) { dx = x - (bar_x + bar_w - radius); dy = (bar_y + radius) - y; is_corner = 1; }
+            else if (x < bar_x + radius && y > bar_y + bar_h - radius) { dx = (bar_x + radius) - x; dy = y - (bar_y + bar_h - radius); is_corner = 1; }
+            else if (x > bar_x + bar_w - radius && y > bar_y + bar_h - radius) { dx = x - (bar_x + bar_w - radius); dy = y - (bar_y + bar_h - radius); is_corner = 1; }
+            if (is_corner) {
+                uint32_t dist_sq = dx*dx + dy*dy;
+                uint32_t r_sq = radius * radius;
+                uint32_t inner_r_sq = (radius - 1) * (radius - 1);
+                if (dist_sq >= r_sq) alpha = 0;
+                else if (dist_sq > inner_r_sq) alpha = (200 * (r_sq - dist_sq)) / (r_sq - inner_r_sq);
+            }
+            if (alpha > 0) draw_pixel(x, y, blend_colors(get_wallpaper_pixel_fast(x, y, fb), bar_color, alpha), fb);
+        }
+    }
+}
+
 void hide_cursor(struct multiboot_tag_framebuffer* fb) {
     if (last_mouse_x == -1) return;
     uint8_t* dib = cursor_data + 6 + 16;
@@ -744,6 +766,7 @@ void kernel_main(uint64_t multiboot_addr) {
             for (uint32_t x = 0; x < fb->framebuffer_width; x++) { draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb); }
         }
         draw_dock(fb);
+        draw_status_bar(fb);
 
         // Hálózat inicializálása
         net_status = 5; draw_dock(fb); // PCI Scan Start (Fehér)
@@ -814,6 +837,7 @@ void kernel_main(uint64_t multiboot_addr) {
                 last_displayed_status = net_status;
                 hide_cursor(fb);
                 draw_dock(fb);
+                draw_status_bar(fb);
                 if (dialog_state == 1) draw_dialog(fb, "Restart", "Are you sure you want to restart the system?");
                 else if (dialog_state == 2) draw_dialog(fb, "Shutdown", "Are you sure you want to shutdown the system?");
                 draw_cursor(mouse_x, mouse_y, fb);
