@@ -443,10 +443,6 @@ void get_time(uint8_t* h, uint8_t* m) {
         *h = ((*h & 0x7F) + 12) % 24;
     }
 
-    // AUTOMATIKUS IDŐZÓNA KEZELÉS:
-    // A QEMU alapértelmezésben UTC időt küld, ezért ott kell a +2 óra korrekció.
-    // A VirtualBox és a legtöbb fizikai számítógép (BIOS/UEFI) alapból a helyi időt (Local Time) tárolja,
-    // így azokon nincs szükség további eltolásra.
     if (is_qemu()) {
         *h = (*h + 2) % 24;
     }
