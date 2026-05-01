@@ -260,3 +260,15 @@ arial_font_xml_data:
     incbin "sysroot/AnimOS/assets/fonts/arial_black/arial_black.xml"
     db 0 ; Null terminator for safety
 arial_font_xml_end:
+
+align 8
+global offline_icon_data
+offline_icon_data:
+    incbin "sysroot/AnimOS/assets/ui/offline.bmp"
+offline_icon_end:
+
+align 8
+global online_icon_data
+online_icon_data:
+    incbin "sysroot/AnimOS/assets/ui/online.bmp"
+online_icon_end:

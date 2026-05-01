@@ -22,6 +22,8 @@ extern uint8_t power_icon_data[];
 extern uint8_t user_icon_data[];
 extern uint8_t arial_font_data[];
 extern uint8_t arial_font_xml_data[];
+extern uint8_t offline_icon_data[];
+extern uint8_t online_icon_data[];
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -332,19 +334,49 @@ void draw_icon_scaled(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target
 
     for (uint32_t iy = 0; iy < target_h; iy++) {
         for (uint32_t ix = 0; ix < target_w; ix++) {
-            int32_t src_x = ix * w / target_w;
-            int32_t src_y_raw = iy * abs_h / target_h;
-            int32_t src_y = (h > 0) ? (abs_h - 1 - src_y_raw) : src_y_raw;
-            uint8_t* p = pixels + (src_y * row_size) + (src_x * (bpp / 8));
-            uint32_t color = (p[2] << 16) | (p[1] << 8) | p[0];
-            if (bpp == 32) {
-                uint8_t alpha = p[3]; if (alpha == 0) continue;
+            uint32_t x_start = ix * w / target_w;
+            uint32_t x_end = (ix + 1) * w / target_w;
+            uint32_t y_start_raw = iy * abs_h / target_h;
+            uint32_t y_end_raw = (iy + 1) * abs_h / target_h;
+
+            if (x_end <= x_start) x_end = x_start + 1;
+            if (y_end_raw <= y_start_raw) y_end_raw = y_start_raw + 1;
+
+            uint64_t r_sq_sum = 0, g_sq_sum = 0, b_sq_sum = 0, a_sum = 0;
+            uint32_t count = 0;
+
+            for (uint32_t sy_raw = y_start_raw; sy_raw < y_end_raw; sy_raw++) {
+                for (uint32_t sx = x_start; sx < x_end; sx++) {
+                    int32_t src_y = (h > 0) ? (abs_h - 1 - (int32_t)sy_raw) : (int32_t)sy_raw;
+                    uint8_t* p = pixels + (src_y * row_size) + (sx * (bpp / 8));
+                    
+                    // Perceptual averaging: sum of squares for better detail retention
+                    uint32_t b = p[0], g = p[1], r = p[2];
+                    b_sq_sum += b * b;
+                    g_sq_sum += g * g;
+                    r_sq_sum += r * r;
+                    
+                    if (bpp == 32) a_sum += p[3]; else a_sum += 255;
+                    count++;
+                }
+            }
+
+            if (count == 0) continue;
+            
+            uint32_t r_avg = sqrt_int(r_sq_sum / count);
+            uint32_t g_avg = sqrt_int(g_sq_sum / count);
+            uint32_t b_avg = sqrt_int(b_sq_sum / count);
+            uint32_t avg_color = (r_avg << 16) | (g_avg << 8) | b_avg;
+            uint8_t avg_alpha = (uint8_t)(a_sum / count);
+
+            if (avg_alpha == 0) continue;
+            if (avg_alpha < 255) {
                 uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
                 uint32_t offset = (y + iy) * fb->framebuffer_pitch + (x + ix) * (fb->framebuffer_bpp / 8);
                 uint32_t bg = (fb->framebuffer_bpp == 32) ? *(uint32_t*)(screen + offset) : (screen[offset+2] << 16) | (screen[offset+1] << 8) | screen[offset];
-                color = blend_colors(bg, color, alpha);
+                avg_color = blend_colors(bg, avg_color, avg_alpha);
             }
-            draw_pixel(x + ix, y + iy, color, fb);
+            draw_pixel(x + ix, y + iy, avg_color, fb);
         }
     }
 }
@@ -610,7 +642,7 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
 
 void draw_status_bar(struct multiboot_tag_framebuffer* fb) {
     uint32_t margin = 20;
-    uint32_t bar_h = 30, bar_w = 200, bar_x = fb->framebuffer_width - margin - bar_w, bar_y = margin, radius = 12, bar_color = 0xFFFFFF;
+    uint32_t bar_h = 36, bar_w = 200, bar_x = fb->framebuffer_width - margin - bar_w, bar_y = margin, radius = 18, bar_color = 0xFFFFFF;
     for (uint32_t y = bar_y; y < bar_y + bar_h; y++) {
         for (uint32_t x = bar_x; x < bar_x + bar_w; x++) {
             uint8_t alpha = 200; uint32_t dx = 0, dy = 0; int is_corner = 0;
@@ -628,6 +660,10 @@ void draw_status_bar(struct multiboot_tag_framebuffer* fb) {
             if (alpha > 0) draw_pixel(x, y, blend_colors(get_wallpaper_pixel_fast(x, y, fb), bar_color, alpha), fb);
         }
     }
+
+    uint8_t* icon = (net_dhcp_ok() && net_status == 3) ? online_icon_data : offline_icon_data;
+    uint32_t icon_size = 24;
+    draw_icon_scaled(bar_x + bar_w - icon_size - 5, bar_y + (bar_h - icon_size) / 2, icon_size, icon_size, icon, fb);
 }
 
 void hide_cursor(struct multiboot_tag_framebuffer* fb) {
