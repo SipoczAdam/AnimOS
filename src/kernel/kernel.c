@@ -1,7 +1,9 @@
 #include "types.h"
+#include "io.h"
 #include "../drivers/pci.h"
 #include "../drivers/e1000.h"
 #include "../net/net.h"
+#include "../fs/vfs.h"
 
 struct multiboot_tag { uint32_t type; uint32_t size; };
 struct multiboot_tag_framebuffer {
@@ -32,20 +34,6 @@ int32_t cursor_h = 32;
 int net_status = 0; // 0: None, 1: Found, 2: Sent, 3: Synced
 
 void msleep(uint32_t ms);
-
-static inline void outb(uint16_t port, uint8_t val) {
-    __asm__ volatile ( "outb %0, %1" : : "a"(val), "Nd"(port) );
-}
-
-static inline void outw(uint16_t port, uint16_t val) {
-    __asm__ volatile ( "outw %0, %1" : : "a"(val), "Nd"(port) );
-}
-
-static inline uint8_t inb(uint16_t port) {
-    uint8_t ret;
-    __asm__ volatile ( "inb %1, %0" : "=a"(ret) : "Nd"(port) );
-    return ret;
-}
 
 int memcmp_custom(const void* s1, const void* s2, uint32_t n) {
     const uint8_t *p1 = s1, *p2 = s2;
@@ -103,8 +91,6 @@ void shutdown(uint64_t multiboot_addr) {
 
     while(1) __asm__ volatile("hlt");
 }
-
-static inline void io_wait(void) { outb(0x80, 0); }
 
 void pic_remap(void) {
     outb(0x20, 0x11); io_wait();
@@ -797,6 +783,7 @@ void kernel_main(uint64_t multiboot_addr) {
         idt_load(&idtp);
         mouse_init();
         init_wallpaper_info();
+        vfs_init();
 
         for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
             for (uint32_t x = 0; x < fb->framebuffer_width; x++) { draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb); }
@@ -863,6 +850,12 @@ void kernel_main(uint64_t multiboot_addr) {
                 }
             }
             if (ntp_retry_timer > 0) ntp_retry_timer--;
+
+            // Külön ellenőrzés: Ha a DHCP OK, de még a REQUEST fázisban vagyunk a UI szerint
+            if (net_dhcp_ok() && net_status == 8) {
+                // Várunk egy picit, hátha jön az NTP, de legalább ne DHCP REQ-et írjunk
+                // net_status = 2; // Vissza 'SEND NTP' állapotba (vagy egy új 'DHCP OK' állapotba)
+            }
 
             uint8_t h, m;
             get_time(&h, &m);

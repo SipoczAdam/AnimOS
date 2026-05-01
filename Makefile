@@ -13,7 +13,7 @@ LD = ld
 CFLAGS = -m64 -nostdlib -nostdinc -fno-builtin -fno-stack-protector -nostartfiles -nodefaultlibs -ffreestanding -O2 -mno-red-zone -mno-mmx -mno-sse -mno-sse2
 LDFLAGS = -m elf_x86_64 -T $(CONFIGDIR)/linker.ld -z max-page-size=0x1000
 
-all: prep compile link iso
+all: prep compile link iso hdd.img
 
 # Folders
 prep:
@@ -26,11 +26,14 @@ compile:
 	$(CC) $(CFLAGS) -c $(SRCDIR)/kernel/kernel.c -o $(BUILDDIR)/kernel.o
 	$(CC) $(CFLAGS) -c $(SRCDIR)/drivers/pci.c -o $(BUILDDIR)/pci.o
 	$(CC) $(CFLAGS) -c $(SRCDIR)/drivers/e1000.c -o $(BUILDDIR)/e1000.o
+	$(CC) $(CFLAGS) -c $(SRCDIR)/drivers/ata.c -o $(BUILDDIR)/ata.o
+	$(CC) $(CFLAGS) -c $(SRCDIR)/fs/fat32.c -o $(BUILDDIR)/fat32.o
+	$(CC) $(CFLAGS) -c $(SRCDIR)/fs/vfs.c -o $(BUILDDIR)/vfs.o
 	$(CC) $(CFLAGS) -c $(SRCDIR)/net/net.c -o $(BUILDDIR)/net.o
 
 # Linker
 link:
-	$(LD) $(LDFLAGS) -static -o $(BUILDDIR)/kernel.bin $(BUILDDIR)/boot.o $(BUILDDIR)/kernel.o $(BUILDDIR)/pci.o $(BUILDDIR)/e1000.o $(BUILDDIR)/net.o
+	$(LD) $(LDFLAGS) -static -o $(BUILDDIR)/kernel.bin $(BUILDDIR)/boot.o $(BUILDDIR)/kernel.o $(BUILDDIR)/pci.o $(BUILDDIR)/e1000.o $(BUILDDIR)/ata.o $(BUILDDIR)/fat32.o $(BUILDDIR)/vfs.o $(BUILDDIR)/net.o
 
 # Building ISO
 iso:
@@ -41,10 +44,17 @@ iso:
 	cp -r $(ASSETDIR)/grub-theme/* isodir/boot/grub/themes/grub-theme/
 	grub-mkrescue -o animos.iso isodir
 
+# Disk Image
+hdd.img:
+	dd if=/dev/zero of=hdd.img bs=1M count=64
+	mkfs.fat -F 32 -n "SYSROOT" hdd.img
+	mmd -i hdd.img ::/AnimOS
+	mcopy -i hdd.img -s sysroot/AnimOS/* ::/AnimOS/
+
 # Clean
 clean:
-	rm -rf $(BUILDDIR) isodir animos.iso
+	rm -rf $(BUILDDIR) isodir animos.iso hdd.img
 
 # Run
 run:
-	qemu-system-x86_64 -cdrom animos.iso -m 1G -net nic,model=e1000 -net user
+	qemu-system-x86_64 -boot d -cdrom animos.iso -drive file=hdd.img,format=raw -m 1G -net nic,model=e1000 -net user

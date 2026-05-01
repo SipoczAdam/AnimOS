@@ -210,6 +210,7 @@ void net_poll() {
                         uint32_t server = 0;
                         while(*opt != 255 && opt < (dhcp->options + 312)) {
                             if (*opt == 0) { opt++; continue; }
+                            if (opt + 2 + opt[1] > dhcp->options + 312) break; // Safety check
                             if(*opt == 53) type = opt[2];
                             if(*opt == 54) server = *(uint32_t*)(opt + 2);
                             if(*opt == 3) gateway_ip = *(uint32_t*)(opt + 2);
