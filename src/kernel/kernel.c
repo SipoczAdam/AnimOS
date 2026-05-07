@@ -18,14 +18,21 @@ struct idt_entry {
 } __attribute__((packed));
 struct idt_ptr { uint16_t limit; uint64_t base; } __attribute__((packed));
 
-extern uint8_t wallpaper_data[];
-extern uint8_t cursor_data[];
-extern uint8_t power_icon_data[];
-extern uint8_t user_icon_data[];
-extern uint8_t arial_font_data[];
-extern uint8_t arial_font_xml_data[];
-extern uint8_t offline_icon_data[];
-extern uint8_t online_icon_data[];
+extern uint8_t wallpaper_data_embedded[];
+extern uint8_t cursor_data_embedded[];
+extern uint8_t power_icon_data_embedded[];
+extern uint8_t arial_font_data_embedded[];
+extern uint8_t arial_font_xml_data_embedded[];
+extern uint8_t offline_icon_data_embedded[];
+extern uint8_t online_icon_data_embedded[];
+
+uint8_t* wallpaper_data = wallpaper_data_embedded;
+uint8_t* cursor_data = cursor_data_embedded;
+uint8_t* power_icon_data = power_icon_data_embedded;
+uint8_t* arial_font_data = arial_font_data_embedded;
+uint8_t* arial_font_xml_data = arial_font_xml_data_embedded;
+uint8_t* offline_icon_data = offline_icon_data_embedded;
+uint8_t* online_icon_data = online_icon_data_embedded;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -34,6 +41,7 @@ int32_t cursor_h = 32;
 int net_status = 0; // 0: None, 1: Found, 2: Sent, 3: Synced
 
 void msleep(uint32_t ms);
+void init_wallpaper_info();
 
 int memcmp_custom(const void* s1, const void* s2, uint32_t n) {
     const uint8_t *p1 = s1, *p2 = s2;
@@ -276,6 +284,26 @@ void init_wallpaper_info() {
     wall_info.height = bih->biHeight;
     wall_info.bpp = bih->biBitCount;
     wall_info.row_size = (wall_info.width * (wall_info.bpp / 8) + 3) & ~3;
+}
+
+extern uint8_t kernel_end[];
+static uint8_t* bump_ptr = 0;
+
+void* malloc_custom(uint32_t size) {
+    if (bump_ptr == 0) bump_ptr = kernel_end;
+    // Align to 8 bytes
+    bump_ptr = (uint8_t*)(((uint64_t)bump_ptr + 7) & ~7);
+    void* ptr = bump_ptr;
+    bump_ptr += size;
+    return ptr;
+}
+
+uint8_t* load_asset(const char* path) {
+    uint32_t size = vfs_get_file_size(path);
+    if (size == 0) return 0;
+    uint8_t* buffer = malloc_custom(size);
+    if (vfs_read_file(path, buffer) != 0) return 0;
+    return buffer;
 }
 
 uint32_t get_wallpaper_pixel_fast(uint32_t x, uint32_t y, struct multiboot_tag_framebuffer* fb) {
@@ -784,6 +812,28 @@ void kernel_main(uint64_t multiboot_addr) {
         mouse_init();
         init_wallpaper_info();
         vfs_init();
+
+        // Dynamically load assets from disk if available
+        uint8_t* new_wall = load_asset("Sysroot:/AnimOS/assets/wallpapers/bubble.bmp");
+        if (new_wall) { wallpaper_data = new_wall; init_wallpaper_info(); }
+        
+        uint8_t* new_cursor = load_asset("Sysroot:/AnimOS/assets/cursor/Default/Normal Select.cur");
+        if (new_cursor) cursor_data = new_cursor;
+
+        uint8_t* new_power = load_asset("Sysroot:/AnimOS/assets/taskbar/power.bmp");
+        if (new_power) power_icon_data = new_power;
+
+        uint8_t* new_font = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.bmp");
+        if (new_font) arial_font_data = new_font;
+
+        uint8_t* new_font_xml = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.xml");
+        if (new_font_xml) arial_font_xml_data = new_font_xml;
+
+        uint8_t* new_offline = load_asset("Sysroot:/AnimOS/assets/ui/offline.bmp");
+        if (new_offline) offline_icon_data = new_offline;
+
+        uint8_t* new_online = load_asset("Sysroot:/AnimOS/assets/ui/online.bmp");
+        if (new_online) online_icon_data = new_online;
 
         for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
             for (uint32_t x = 0; x < fb->framebuffer_width; x++) { draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb); }

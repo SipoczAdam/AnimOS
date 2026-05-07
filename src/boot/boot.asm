@@ -231,44 +231,44 @@ gdt64:
     dq gdt64
 
 align 8
-global cursor_data
-cursor_data:
+global cursor_data_embedded
+cursor_data_embedded:
     incbin "sysroot/AnimOS/assets/cursor/Default/Normal Select.cur"
 cursor_end:
 
 align 8
-global wallpaper_data
-wallpaper_data:
+global wallpaper_data_embedded
+wallpaper_data_embedded:
     incbin "sysroot/AnimOS/assets/wallpapers/clarity.bmp"
 wallpaper_end:
 
 align 8
-global power_icon_data
-power_icon_data:
+global power_icon_data_embedded
+power_icon_data_embedded:
     incbin "sysroot/AnimOS/assets/taskbar/power.bmp"
 power_icon_end:
 
 align 8
-global arial_font_data
-arial_font_data:
+global arial_font_data_embedded
+arial_font_data_embedded:
     incbin "sysroot/AnimOS/assets/fonts/arial_black/arial_black.bmp"
 arial_font_end:
 
 align 8
-global arial_font_xml_data
-arial_font_xml_data:
+global arial_font_xml_data_embedded
+arial_font_xml_data_embedded:
     incbin "sysroot/AnimOS/assets/fonts/arial_black/arial_black.xml"
     db 0 ; Null terminator for safety
 arial_font_xml_end:
 
 align 8
-global offline_icon_data
-offline_icon_data:
+global offline_icon_data_embedded
+offline_icon_data_embedded:
     incbin "sysroot/AnimOS/assets/ui/offline.bmp"
 offline_icon_end:
 
 align 8
-global online_icon_data
-online_icon_data:
+global online_icon_data_embedded
+online_icon_data_embedded:
     incbin "sysroot/AnimOS/assets/ui/online.bmp"
 online_icon_end:

@@ -24,6 +24,8 @@ SECTIONS {
         *(.bss)
     }
 
+    kernel_end = .;
+
     /DISCARD/ : {
         *(.comment)
         *(.eh_frame)

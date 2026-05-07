@@ -53,5 +53,6 @@ struct fat32_directory_entry {
 
 int fat32_init();
 int fat32_read_file(const char* path, uint8_t* buffer);
+uint32_t fat32_get_file_size(const char* path);
 
 #endif

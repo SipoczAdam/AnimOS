@@ -15,3 +15,11 @@ int vfs_read_file(const char* path, uint8_t* buffer) {
     }
     return -1;
 }
+
+uint32_t vfs_get_file_size(const char* path) {
+    if (memcmp_custom(path, "Sysroot:/", 9) == 0) {
+        const char* internal_path = path + 9;
+        return fat32_get_file_size(internal_path);
+    }
+    return 0;
+}

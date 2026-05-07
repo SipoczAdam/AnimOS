@@ -1,31 +1,26 @@
-# AnimOS Fejlesztési Állapot - 2026. május 1.
+# AnimOS Fejlesztési Állapot - 2026. május 7.
 
-Sikeresen lezártuk a projekt egy jelentős szakaszát, amelyben az AnimOS vizuális felülete és tárolási képességei hatalmasat léptek előre.
+Sikeresen lezártuk a projekt egy jelentős szakaszát, amelyben az AnimOS fájlkezelési és memóriakezelési képességei hatalmasat léptek előre.
 
 ## Elért eredmények
 
-### 1. Felhasználói Felület (UI) Finomítása
-- **Felső Állapotsáv:** Új, vékony és elegáns állapotsáv a jobb felső sarokban.
-- **Dinamikus Hálózati Ikonok:** Az állapotsáv jobb oldalán `online.bmp` vagy `offline.bmp` jelenik meg a tényleges DHCP és NTP állapot alapján.
-- **Fejlett Képméretezés:** Implementáltunk egy **Box Sampling** és **Perceptuális mintavételezésű** (négyzetes átlagolás) méretező algoritmust, amely éles és részletgazdag megjelenítést biztosít a nagy felbontású BMP fájloknak is.
-- **Lekerekített sarkok:** Az összes UI elem (tálca, állapotsáv, párbeszédpanelek) egységes, 18-25 pixeles lekerekítést kapott a modern megjelenés érdekében.
-- **Kifinomult Kikapcsolás:** Kétlépcsős leállítási folyamat: "Logging off..." -> "AnimOS is shutting down...".
+### 1. Fájlrendszer (FAT32) Kiterjesztése
+- **Klaszter-lánc követés (Cluster Chain Following):** A FAT32 driver mostantól képes tetszőleges méretű fájlok olvasására a FAT tábla bejárásával. Ez lehetővé tette a nagy méretű (3.8MB+) háttérképek és assetek betöltését.
+- **Könyvtár bejárás (Directory Traversal):** Támogatjuk a többszintű mappastruktúrák bejárását és a fájlok keresését.
+- **Fájlméret lekérdezés:** Új `vfs_get_file_size` funkció a dinamikus memóriafoglalás támogatásához.
 
-### 2. Tárolás és Fájlrendszer (Fizikai Szint)
-- **ATA PIO Driver:** Alacsony szintű lemezkezelő driver, amely képes olvasni a fizikai merevlemezek szektorait (LBA28).
-- **FAT32 Driver:** Teljes körű FAT32 olvasási támogatás, amely képes könyvtárak bejárására (traversal) és fájlok beolvasására.
-- **VFS (Virtuális Fájlrendszer):** Bevezettük a `Sysroot:/` absztrakciót, amely a fizikai lemezt a kért struktúrában teszi elérhetővé a kernel számára.
+### 2. Memóriakezelés és Dinamikus Betöltés
+- **Heap Allocator (Bump Allocator):** Implementáltunk egy egyszerű, de hatékony memóriafoglalót a kernelben, amely a kernel bináris vége utáni területet használja.
+- **Dinamikus Asset Betöltés:** A kernel indításkor megpróbálja betölteni a háttérképet, ikonokat és betűtípusokat a `Sysroot:/AnimOS/assets/` mappából.
+- **Beépített Fallback:** Megtartottuk az asset-ek beágyazott verzióit a kernelben, így a rendszer akkor is működőképes marad (vizuálisan is), ha a merevlemez nem érhető el vagy sérült.
 
-### 3. Build Automatizáció és Stabilitás
-- **Automatizált Lemezgenerálás:** A `Makefile` mostantól automatikusan létrehoz egy 64MB-os FAT32 lemezképet (`hdd.img`), formázza azt, és átmásolja rá a `sysroot/AnimOS` mappa tartalmát.
-- **Docker Frissítés:** A build környezet bővült a szükséges lemezkezelő eszközökkel (`dosfstools`, `mtools`).
-- **Memóriavédelem:** Kijavítottunk egy kritikus puffer-túlcsordulási hibát a fájlrendszer inicializálásakor, amely korábban megbénította a hálózati működést.
-- **Központosított I/O:** Minden port-művelet az új `src/kernel/io.h` fejlécbe került a kód tisztasága és hordozhatósága érdekében.
+### 3. Vizuális Rendszer Rugalmassága
+- **Pointer-alapú Erőforráskezelés:** Az összes UI elem (háttérkép, kurzor, ikonok) mostantól mutatókon keresztül érhető el, ami lehetővé teszi a futásidejű cseréjüket (pl. háttérkép váltás).
 
 ## Jelenlegi Állapot
-A rendszer stabilan bootol QEMU-ban, a hálózat működik (IP cím és NTP szinkronizáció rendben), és a fájlrendszer készen áll az asset-ek dinamikus betöltésére.
+A rendszer stabilan bootol, a hálózat és a fájlrendszer összehangoltan működik. Az asset-ek betöltése a lemezről sikeresen megtörténik.
 
 ## Következő Tervezett Lépések
-- Az asset-ek (háttérkép, ikonok, betűtípusok) fokozatos kiszervezése a kernel binárisából a `Sysroot:/AnimOS` mappába.
-- Ablakkezelő rendszer alapjainak kidolgozása.
+- Ablakkezelő rendszer (Window Manager) alapjainak kidolgozása.
+- Konfigurációs fájlok (.ini vagy .xml) kezelése a rendszerbeállításokhoz.
 - Bejelentkező képernyő megvalósítása.
