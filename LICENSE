@@ -1,0 +1,45 @@
+===============================================================================
+       AnimOS OPERATING SYSTEM - PROPRIETARY SOURCE CODE LICENSE
+       Copyright (C) 2026 Sipocz Adam. All Rights Reserved.
+===============================================================================
+
+1. OWNERSHIP AND INTELLECTUAL PROPERTY
+The AnimOS operating system, including but not limited to its source code, 
+compiled binaries (ISO, IMG, BIN), build scripts (Makefiles, Dockerfiles), 
+graphical assets (Icons, UI elements, wallpapers), and the 
+name "AnimOS" are the sole and exclusive intellectual property of Sipocz Adam.
+
+2. LICENSE GRANT AND RESTRICTIONS
+This software is provided for public viewing on GitHub for educational and 
+demonstration purposes only. No license is granted for any other use. 
+The following actions are STRICTLY PROHIBITED without express written 
+permission from the author:
+   a) Copying, reproducing, or redistributing the source code or any 
+      portion thereof.
+   b) Modifying, "forking" for redistribution, or creating derivative 
+      works based on the AnimOS project.
+   c) Using any graphical assets or icons in other projects.
+   d) Commercial distribution or sale of the software in any form.
+   e) Removing or altering any copyright notices or headers.
+
+3. REVERSE ENGINEERING
+Decompilation, disassembly, or reverse engineering of the binaries produced 
+by this project is strictly prohibited.
+
+4. NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN 
+THE SOFTWARE.
+
+5. ENFORCEMENT
+Any unauthorized use of this project will result in a DMCA Takedown Notice 
+filed with GitHub and may lead to further legal action to protect the 
+author's intellectual property rights.
+
+Date: May 07, 2026
+Author: Sipocz Adam (AnimOS Project)
+===============================================================================
