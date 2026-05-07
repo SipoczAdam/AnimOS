@@ -13,8 +13,8 @@ static int ata_wait_drq() {
     return (timeout == 0) ? -1 : 0;
 }
 
-int ata_identify() {
-    outb(0x1F6, 0xA0);
+int ata_identify(uint8_t drive) {
+    outb(0x1F6, (drive == 0) ? 0xA0 : 0xB0);
     outb(0x1F2, 0);
     outb(0x1F3, 0);
     outb(0x1F4, 0);
@@ -37,9 +37,9 @@ int ata_identify() {
     return 0;
 }
 
-int ata_read_sectors(uint32_t lba, uint8_t count, uint8_t* buffer) {
+int ata_read_sectors(uint8_t drive, uint32_t lba, uint8_t count, uint8_t* buffer) {
     if (ata_wait_bsy() != 0) return -1;
-    outb(0x1F6, 0xE0 | ((lba >> 24) & 0x0F));
+    outb(0x1F6, ((drive == 0) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F));
     outb(0x1F2, count);
     outb(0x1F3, (uint8_t)lba);
     outb(0x1F4, (uint8_t)(lba >> 8));

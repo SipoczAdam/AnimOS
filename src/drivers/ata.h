@@ -21,7 +21,7 @@
 #define ATA_STATUS_DF   0x20
 #define ATA_STATUS_ERR  0x01
 
-int ata_identify();
-int ata_read_sectors(uint32_t lba, uint8_t count, uint8_t* buffer);
+int ata_identify(uint8_t drive);
+int ata_read_sectors(uint8_t drive, uint32_t lba, uint8_t count, uint8_t* buffer);
 
 #endif

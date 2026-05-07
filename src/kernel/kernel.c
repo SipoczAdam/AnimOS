@@ -18,21 +18,21 @@ struct idt_entry {
 } __attribute__((packed));
 struct idt_ptr { uint16_t limit; uint64_t base; } __attribute__((packed));
 
-extern uint8_t wallpaper_data_embedded[];
 extern uint8_t cursor_data_embedded[];
+extern uint8_t wallpaper_data_embedded[];
 extern uint8_t power_icon_data_embedded[];
 extern uint8_t arial_font_data_embedded[];
 extern uint8_t arial_font_xml_data_embedded[];
 extern uint8_t offline_icon_data_embedded[];
 extern uint8_t online_icon_data_embedded[];
 
-uint8_t* wallpaper_data = wallpaper_data_embedded;
-uint8_t* cursor_data = cursor_data_embedded;
-uint8_t* power_icon_data = power_icon_data_embedded;
-uint8_t* arial_font_data = arial_font_data_embedded;
-uint8_t* arial_font_xml_data = arial_font_xml_data_embedded;
-uint8_t* offline_icon_data = offline_icon_data_embedded;
-uint8_t* online_icon_data = online_icon_data_embedded;
+uint8_t* wallpaper_data = 0;
+uint8_t* cursor_data = 0;
+uint8_t* power_icon_data = 0;
+uint8_t* arial_font_data = 0;
+uint8_t* arial_font_xml_data = 0;
+uint8_t* offline_icon_data = 0;
+uint8_t* online_icon_data = 0;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -277,6 +277,7 @@ struct wallpaper_info {
 struct wallpaper_info wall_info;
 
 void init_wallpaper_info() {
+    if (!wallpaper_data) return;
     struct bmp_file_header* bfh = (struct bmp_file_header*)wallpaper_data;
     struct bmp_info_header* bih = (struct bmp_info_header*)(wallpaper_data + sizeof(struct bmp_file_header));
     wall_info.pixels = wallpaper_data + bfh->bfOffBits;
@@ -307,6 +308,7 @@ uint8_t* load_asset(const char* path) {
 }
 
 uint32_t get_wallpaper_pixel_fast(uint32_t x, uint32_t y, struct multiboot_tag_framebuffer* fb) {
+    if (!wall_info.pixels) return 0;
     int32_t abs_bmp_h = wall_info.height < 0 ? -wall_info.height : wall_info.height;
     int32_t src_y = (wall_info.height > 0) ? (abs_bmp_h - 1 - (int32_t)(y * abs_bmp_h / fb->framebuffer_height)) : (int32_t)(y * abs_bmp_h / fb->framebuffer_height);
     uint8_t* p = wall_info.pixels + (src_y * wall_info.row_size) + ((int32_t)(x * wall_info.width / fb->framebuffer_width) * (wall_info.bpp / 8));
@@ -810,7 +812,17 @@ void kernel_main(uint64_t multiboot_addr) {
         idtp.limit = sizeof(idt) - 1; idtp.base = (uint64_t)&idt;
         idt_load(&idtp);
         mouse_init();
+
+        // Alapértelmezett beágyazott assetek beállítása fallback-nek
+        wallpaper_data = wallpaper_data_embedded;
+        cursor_data = cursor_data_embedded;
+        power_icon_data = power_icon_data_embedded;
+        arial_font_data = arial_font_data_embedded;
+        arial_font_xml_data = arial_font_xml_data_embedded;
+        offline_icon_data = offline_icon_data_embedded;
+        online_icon_data = online_icon_data_embedded;
         init_wallpaper_info();
+
         vfs_init();
 
         // Dynamically load assets from disk if available

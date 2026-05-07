@@ -4,36 +4,44 @@
 static struct fat32_bpb bpb;
 static uint32_t fat_start_sector;
 static uint32_t data_start_sector;
+static uint8_t current_drive = 0;
 
 static uint8_t sector_buffer[512];
 
-int fat32_init() {
-    if (ata_read_sectors(0, 1, sector_buffer) != 0) return -1;
+static int fat32_init_drive(uint8_t drive) {
+    if (ata_read_sectors(drive, 0, 1, sector_buffer) != 0) return -1;
     
     uint8_t* src = sector_buffer;
     uint8_t* dest = (uint8_t*)&bpb;
     for(uint32_t i = 0; i < sizeof(struct fat32_bpb); i++) dest[i] = src[i];
 
     if (bpb.boot_signature != 0x29 && bpb.boot_signature != 0x28) {
-        // Simple MBR check
         if (sector_buffer[510] == 0x55 && sector_buffer[511] == 0xAA) {
-            // Partition 1 LBA is at offset 454 (0x1C6)
             uint32_t p1_lba = *(uint32_t*)&sector_buffer[454];
             if (p1_lba != 0) {
-                if (ata_read_sectors(p1_lba, 1, sector_buffer) != 0) return -1;
+                if (ata_read_sectors(drive, p1_lba, 1, sector_buffer) != 0) return -1;
                 for(uint32_t i = 0; i < sizeof(struct fat32_bpb); i++) dest[i] = sector_buffer[i];
-                
+                if (bpb.boot_signature != 0x29 && bpb.boot_signature != 0x28) return -1;
+
                 fat_start_sector = p1_lba + bpb.reserved_sectors;
                 data_start_sector = p1_lba + bpb.reserved_sectors + (bpb.fat_count * bpb.sectors_per_fat_long);
+                current_drive = drive;
                 return 0;
             }
         }
+        return -1;
     }
 
     fat_start_sector = bpb.reserved_sectors;
     data_start_sector = bpb.reserved_sectors + (bpb.fat_count * bpb.sectors_per_fat_long);
-
+    current_drive = drive;
     return 0;
+}
+
+int fat32_init() {
+    if (fat32_init_drive(0) == 0) return 0;
+    if (fat32_init_drive(1) == 0) return 0;
+    return -1;
 }
 
 static uint32_t get_sector_for_cluster(uint32_t cluster) {
@@ -45,7 +53,7 @@ static uint32_t get_next_cluster(uint32_t cluster) {
     uint32_t fat_offset = (cluster * 4) % 512;
     
     static uint8_t fat_buffer[512];
-    if (ata_read_sectors(fat_sector, 1, fat_buffer) != 0) return 0x0FFFFFFF;
+    if (ata_read_sectors(current_drive, fat_sector, 1, fat_buffer) != 0) return 0x0FFFFFFF;
     
     return (*(uint32_t*)&fat_buffer[fat_offset]) & 0x0FFFFFFF;
 }
@@ -89,7 +97,7 @@ static int find_entry(const char* path, struct fat32_directory_entry* out_entry)
         while (dir_cluster < 0x0FFFFFF8) {
             for (uint32_t s = 0; s < bpb.sectors_per_cluster; s++) {
                 uint32_t sector = get_sector_for_cluster(dir_cluster) + s;
-                if (ata_read_sectors(sector, 1, sector_buffer) != 0) return -1;
+                if (ata_read_sectors(current_drive, sector, 1, sector_buffer) != 0) return -1;
 
                 struct fat32_directory_entry* entries = (struct fat32_directory_entry*)sector_buffer;
                 for (int j = 0; j < 16; j++) {
@@ -132,7 +140,7 @@ int fat32_read_file(const char* path, uint8_t* buffer) {
         uint32_t sector = get_sector_for_cluster(cluster);
         
         for (uint32_t s = 0; s < bpb.sectors_per_cluster && bytes_read < size; s++) {
-            if (ata_read_sectors(sector + s, 1, sector_buffer) != 0) return -1;
+            if (ata_read_sectors(current_drive, sector + s, 1, sector_buffer) != 0) return -1;
             
             uint32_t to_copy = 512;
             if (size - bytes_read < 512) to_copy = size - bytes_read;
