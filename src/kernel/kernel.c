@@ -963,6 +963,10 @@ void kernel_main(uint64_t multiboot_addr) {
                             draw_string((screen_w - get_string_width(logoff_msg)) / 2, screen_h / 2, logoff_msg, 0xFFFFFF, fb);
                             msleep(800);
                             for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
+                            const char* saving_msg = "Saving your settings...";
+                            draw_string((screen_w - get_string_width(saving_msg)) / 2, screen_h / 2, saving_msg, 0xFFFFFF, fb);
+                            msleep(800);
+                            for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
                             const char* shutdown_msg = "AnimOS is shutting down...";
                             draw_string((screen_w - get_string_width(shutdown_msg)) / 2, screen_h / 2, shutdown_msg, 0xFFFFFF, fb);
                             msleep(800);
