@@ -18,14 +18,6 @@ struct idt_entry {
 } __attribute__((packed));
 struct idt_ptr { uint16_t limit; uint64_t base; } __attribute__((packed));
 
-extern uint8_t cursor_data_embedded[];
-extern uint8_t wallpaper_data_embedded[];
-extern uint8_t power_icon_data_embedded[];
-extern uint8_t arial_font_data_embedded[];
-extern uint8_t arial_font_xml_data_embedded[];
-extern uint8_t offline_icon_data_embedded[];
-extern uint8_t online_icon_data_embedded[];
-
 uint8_t* wallpaper_data = 0;
 uint8_t* cursor_data = 0;
 uint8_t* power_icon_data = 0;
@@ -249,8 +241,11 @@ uint32_t sqrt_int(uint32_t n) {
     return x;
 }
 
+struct multiboot_tag_framebuffer* global_fb = 0;
+
 void draw_pixel(uint32_t x, uint32_t y, uint32_t color, struct multiboot_tag_framebuffer* fb) {
-    if (x >= fb->framebuffer_width || y >= fb->framebuffer_height) return;
+    if (!fb) fb = global_fb;
+    if (!fb || x >= fb->framebuffer_width || y >= fb->framebuffer_height) return;
     uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
     uint32_t offset = y * fb->framebuffer_pitch + x * (fb->framebuffer_bpp / 8);
     if (fb->framebuffer_bpp == 32) { *(uint32_t*)(screen + offset) = color; }
@@ -279,6 +274,7 @@ struct wallpaper_info wall_info;
 void init_wallpaper_info() {
     if (!wallpaper_data) return;
     struct bmp_file_header* bfh = (struct bmp_file_header*)wallpaper_data;
+    if (bfh->bfType != 0x4D42) return;
     struct bmp_info_header* bih = (struct bmp_info_header*)(wallpaper_data + sizeof(struct bmp_file_header));
     wall_info.pixels = wallpaper_data + bfh->bfOffBits;
     wall_info.width = bih->biWidth;
@@ -302,8 +298,9 @@ void* malloc_custom(uint32_t size) {
 uint8_t* load_asset(const char* path) {
     uint32_t size = vfs_get_file_size(path);
     if (size == 0) return 0;
-    uint8_t* buffer = malloc_custom(size);
+    uint8_t* buffer = malloc_custom(size + 1);
     if (vfs_read_file(path, buffer) != 0) return 0;
+    buffer[size] = 0; // Null terminator
     return buffer;
 }
 
@@ -316,6 +313,7 @@ uint32_t get_wallpaper_pixel_fast(uint32_t x, uint32_t y, struct multiboot_tag_f
 }
 
 void draw_cursor(int32_t mx, int32_t my, struct multiboot_tag_framebuffer* fb) {
+    if (!cursor_data) return;
     if (mx == last_mouse_x && my == last_mouse_y) return;
     uint8_t* dib = cursor_data + 6 + 16;
     struct bmp_info_header* bih = (struct bmp_info_header*)dib;
@@ -341,6 +339,7 @@ void draw_cursor(int32_t mx, int32_t my, struct multiboot_tag_framebuffer* fb) {
 }
 
 void draw_icon_scaled(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target_h, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb) {
+    if (!bmp_data) return;
     struct bmp_file_header* bfh = (struct bmp_file_header*)bmp_data;
     struct bmp_info_header* bih = (struct bmp_info_header*)(bmp_data + sizeof(struct bmp_file_header));
     uint8_t* pixels = bmp_data + bfh->bfOffBits;
@@ -398,6 +397,7 @@ void draw_icon_scaled(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target
 }
 
 void draw_icon(uint32_t x, uint32_t y, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb) {
+    if (!bmp_data) return;
     struct bmp_file_header* bfh = (struct bmp_file_header*)bmp_data;
     struct bmp_info_header* bih = (struct bmp_info_header*)(bmp_data + sizeof(struct bmp_file_header));
     uint8_t* pixels = bmp_data + bfh->bfOffBits;
@@ -421,12 +421,14 @@ void draw_icon(uint32_t x, uint32_t y, uint8_t* bmp_data, struct multiboot_tag_f
     }
 }
 
+
 uint8_t read_rtc_reg(uint8_t reg) {
     outb(0x70, reg);
     return inb(0x71);
 }
 
 const char* strstr_custom(const char* haystack, const char* needle) {
+    if (!haystack || !needle) return 0;
     if (!*needle) return haystack;
     for (; *haystack; haystack++) {
         if (*haystack == *needle) {
@@ -512,6 +514,7 @@ int32_t get_attr_value(const char* tag, const char* attr) {
 }
 
 int32_t draw_char(uint32_t x, uint32_t y, char c, uint32_t color, struct multiboot_tag_framebuffer* fb) {
+    if (!arial_font_xml_data || !arial_font_data) return 0;
     char search[16] = "<char id=\"";
     int i = 10;
     uint8_t code = (uint8_t)c;
@@ -555,6 +558,7 @@ int32_t draw_char(uint32_t x, uint32_t y, char c, uint32_t color, struct multibo
 }
 
 void draw_string(uint32_t x, uint32_t y, const char* str, uint32_t color, struct multiboot_tag_framebuffer* fb) {
+    if (!str) return;
     while (*str) {
         x += draw_char(x, y, *str, color, fb);
         str++;
@@ -571,6 +575,7 @@ void uint_to_hex(uint64_t n, char* out, int digits) {
 }
 
 int32_t get_char_width(char c) {
+    if (!arial_font_xml_data) return 0;
     char search[16] = "<char id=\"";
     int i = 10;
     uint8_t code = (uint8_t)c;
@@ -584,6 +589,7 @@ int32_t get_char_width(char c) {
 }
 
 uint32_t get_string_width(const char* str) {
+    if (!str) return 0;
     uint32_t w = 0;
     while (*str) { w += get_char_width(*str); str++; }
     return w;
@@ -609,15 +615,18 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
             if (alpha > 0) draw_pixel(x, y, blend_colors(get_wallpaper_pixel_fast(x, y, fb), dock_color, alpha), fb);
         }
     }
-    struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
-    int32_t icon_h = icon_bih->biHeight < 0 ? -icon_bih->biHeight : icon_bih->biHeight;
-    draw_icon(dock_x + 15, dock_y + (dock_h - icon_h) / 2, power_icon_data, fb);
+    if (power_icon_data) {
+        struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
+        int32_t icon_h = icon_bih->biHeight < 0 ? -icon_bih->biHeight : icon_bih->biHeight;
+        draw_icon(dock_x + 15, dock_y + (dock_h - icon_h) / 2, power_icon_data, fb);
+    }
 
     uint8_t h, m; get_time(&h, &m);
     char time_str[6] = { (h/10)+'0', (h%10)+'0', ':', (m/10)+'0', (m%10)+'0', 0 };
     uint32_t time_x = dock_x + dock_w - 80;
     uint32_t time_y = dock_y + 17;
     draw_string(time_x, time_y, time_str, 0x333333, fb);
+
 
     extern int received_any;
     const char* status_str = "";
@@ -803,6 +812,7 @@ void kernel_main(uint64_t multiboot_addr) {
         if (tag->type == 8) fb = (struct multiboot_tag_framebuffer*)tag;
     }
     if (fb && fb->framebuffer_addr != 0) {
+        global_fb = fb;
         screen_w = fb->framebuffer_width; screen_h = fb->framebuffer_height;
         mouse_x = screen_w / 2; mouse_y = screen_h / 2;
         pic_remap();
@@ -813,45 +823,51 @@ void kernel_main(uint64_t multiboot_addr) {
         idt_load(&idtp);
         mouse_init();
 
-        // Alapértelmezett beágyazott assetek beállítása fallback-nek
-        wallpaper_data = wallpaper_data_embedded;
-        cursor_data = cursor_data_embedded;
-        power_icon_data = power_icon_data_embedded;
-        arial_font_data = arial_font_data_embedded;
-        arial_font_xml_data = arial_font_xml_data_embedded;
-        offline_icon_data = offline_icon_data_embedded;
-        online_icon_data = online_icon_data_embedded;
-        init_wallpaper_info();
-
-        vfs_init();
-
-        // Dynamically load assets from disk if available
-        uint8_t* new_wall = load_asset("Sysroot:/AnimOS/assets/wallpapers/bubble.bmp");
-        if (new_wall) { wallpaper_data = new_wall; init_wallpaper_info(); }
-        
-        uint8_t* new_cursor = load_asset("Sysroot:/AnimOS/assets/cursor/Default/Normal Select.cur");
-        if (new_cursor) cursor_data = new_cursor;
-
-        uint8_t* new_power = load_asset("Sysroot:/AnimOS/assets/taskbar/power.bmp");
-        if (new_power) power_icon_data = new_power;
-
-        uint8_t* new_font = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.bmp");
-        if (new_font) arial_font_data = new_font;
-
-        uint8_t* new_font_xml = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.xml");
-        if (new_font_xml) arial_font_xml_data = new_font_xml;
-
-        uint8_t* new_offline = load_asset("Sysroot:/AnimOS/assets/ui/offline.bmp");
-        if (new_offline) offline_icon_data = new_offline;
-
-        uint8_t* new_online = load_asset("Sysroot:/AnimOS/assets/ui/online.bmp");
-        if (new_online) online_icon_data = new_online;
-
+        // 1. Képernyő törlése (feketére), hogy a debug pöttyök látszódjanak
         for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
-            for (uint32_t x = 0; x < fb->framebuffer_width; x++) { draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb); }
+            for (uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
         }
+
+        int vfs_res = vfs_init();
+
+        // Dynamically load assets from disk
+        wallpaper_data = load_asset("Sysroot:/AnimOS/assets/wallpapers/solstice.bmp");
+        init_wallpaper_info();
+        
+        cursor_data = load_asset("Sysroot:/AnimOS/assets/cursor/Default/Normal Select.cur");
+        power_icon_data = load_asset("Sysroot:/AnimOS/assets/taskbar/power.bmp");
+        arial_font_data = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.bmp");
+        arial_font_xml_data = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.xml");
+        offline_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/offline.bmp");
+        online_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/online.bmp");
+
+        // 2. UI fázis: Háttérkép kirajzolása (most már az adatokkal)
+        if (wallpaper_data) {
+            for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
+                for (uint32_t x = 0; x < fb->framebuffer_width; x++) { 
+                    draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb); 
+                }
+            }
+        }
+
+        // 3. Kernel szintű indikátorok (színes pöttyök legfelül)
+        if (vfs_res == 0) {
+            for(int i=0; i<10; i++) for(int j=0; j<10; j++) draw_pixel(5+i, 5+j, 0x00FF00, fb); // Green: VFS OK
+        } else {
+            for(int i=0; i<10; i++) for(int j=0; j<10; j++) draw_pixel(5+i, 5+j, 0xFF0000, fb); // Red: VFS Fail
+        }
+
+        if (wallpaper_data) {
+            for(int i=0; i<10; i++) for(int j=0; j<10; j++) draw_pixel(20+i, 5+j, 0x0000FF, fb); // Blue: Wall OK
+        }
+        if (arial_font_data && arial_font_xml_data) {
+            for(int i=0; i<10; i++) for(int j=0; j<10; j++) draw_pixel(35+i, 5+j, 0x00FFFF, fb); // Cyan: Font OK
+        }
+
         draw_dock(fb);
         draw_status_bar(fb);
+
+
 
         // Hálózat inicializálása
         net_status = 5; draw_dock(fb); // PCI Scan Start (Fehér)

@@ -6,35 +6,48 @@ static uint32_t fat_start_sector;
 static uint32_t data_start_sector;
 static uint8_t current_drive = 0;
 
-static uint8_t sector_buffer[512];
+static uint8_t sector_buffer[512] __attribute__((aligned(16)));
+
+// Debugging tool for FAT32
+extern void draw_pixel(uint32_t x, uint32_t y, uint32_t color, void* fb);
+static void debug_dot(int x_offset, uint32_t color) {
+    for(int i=0; i<10; i++) for(int j=0; j<10; j++) draw_pixel(x_offset+i, 20+j, color, 0);
+}
 
 static int fat32_init_drive(uint8_t drive) {
+    // Grey dot: checking drive
+    debug_dot(10 + drive * 15, 0x777777);
+
     if (ata_read_sectors(drive, 0, 1, sector_buffer) != 0) return -1;
     
+    // Check if sector 0 is a BPB or an MBR
+    // FAT32 BPB has 0x28 or 0x29 at offset 66
+    int is_bpb = (sector_buffer[66] == 0x28 || sector_buffer[66] == 0x29);
+    uint32_t p1_lba = 0;
+
+    if (!is_bpb && sector_buffer[510] == 0x55 && sector_buffer[511] == 0xAA) {
+        // Purple dot: checking MBR
+        debug_dot(25, 0xFF00FF);
+        p1_lba = *(uint32_t*)&sector_buffer[454]; // Corrected LBA offset
+        if (p1_lba != 0) {
+            if (ata_read_sectors(drive, p1_lba, 1, sector_buffer) != 0) return -1;
+            is_bpb = (sector_buffer[66] == 0x28 || sector_buffer[66] == 0x29);
+        }
+    }
+
+    if (!is_bpb) return -1;
+
     uint8_t* src = sector_buffer;
     uint8_t* dest = (uint8_t*)&bpb;
     for(uint32_t i = 0; i < sizeof(struct fat32_bpb); i++) dest[i] = src[i];
 
-    if (bpb.boot_signature != 0x29 && bpb.boot_signature != 0x28) {
-        if (sector_buffer[510] == 0x55 && sector_buffer[511] == 0xAA) {
-            uint32_t p1_lba = *(uint32_t*)&sector_buffer[454];
-            if (p1_lba != 0) {
-                if (ata_read_sectors(drive, p1_lba, 1, sector_buffer) != 0) return -1;
-                for(uint32_t i = 0; i < sizeof(struct fat32_bpb); i++) dest[i] = sector_buffer[i];
-                if (bpb.boot_signature != 0x29 && bpb.boot_signature != 0x28) return -1;
-
-                fat_start_sector = p1_lba + bpb.reserved_sectors;
-                data_start_sector = p1_lba + bpb.reserved_sectors + (bpb.fat_count * bpb.sectors_per_fat_long);
-                current_drive = drive;
-                return 0;
-            }
-        }
-        return -1;
-    }
-
-    fat_start_sector = bpb.reserved_sectors;
-    data_start_sector = bpb.reserved_sectors + (bpb.fat_count * bpb.sectors_per_fat_long);
+    fat_start_sector = p1_lba + bpb.reserved_sectors;
+    data_start_sector = fat_start_sector + (bpb.fat_count * bpb.sectors_per_fat_long);
     current_drive = drive;
+    
+    // Yellow dot: Found valid FAT32 partition
+    debug_dot(35, 0xFFFF00); 
+    
     return 0;
 }
 
@@ -52,8 +65,11 @@ static uint32_t get_next_cluster(uint32_t cluster) {
     uint32_t fat_sector = fat_start_sector + (cluster * 4) / 512;
     uint32_t fat_offset = (cluster * 4) % 512;
     
-    static uint8_t fat_buffer[512];
-    if (ata_read_sectors(current_drive, fat_sector, 1, fat_buffer) != 0) return 0x0FFFFFFF;
+    static uint8_t fat_buffer[512] __attribute__((aligned(16)));
+    if (ata_read_sectors(current_drive, fat_sector, 1, fat_buffer) != 0) {
+        debug_dot(5, 0xFF0000); // Red dot: FAT read error
+        return 0x0FFFFFFF;
+    }
     
     return (*(uint32_t*)&fat_buffer[fat_offset]) & 0x0FFFFFFF;
 }
@@ -76,57 +92,140 @@ static void filename_to_fat(const char* input, char* output) {
     }
 }
 
+#pragma pack(push, 1)
+struct fat32_lfn_entry {
+    uint8_t  order;
+    uint16_t name1[5];
+    uint8_t  attributes;
+    uint8_t  type;
+    uint8_t  checksum;
+    uint16_t name2[6];
+    uint16_t zero;
+    uint16_t name3[2];
+};
+#pragma pack(pop)
+
+// Debugging tool for FAT32
+static void debug_dot(int x_offset, uint32_t color);
+
 static int find_entry(const char* path, struct fat32_directory_entry* out_entry) {
     uint32_t current_cluster = bpb.root_cluster;
     const char* p = path;
     if (*p == '/') p++;
 
+    int component_depth = 0;
     while (*p) {
-        char component[13];
+        char component[256];
         int i = 0;
-        while (*p && *p != '/' && i < 12) component[i++] = *p++;
+        while (*p && *p != '/' && i < 255) component[i++] = *p++;
         component[i] = 0;
         if (*p == '/') p++;
+        
+        component_depth++;
+        if (component_depth > 1) {
+            // Cyan dot: searching in subdirectory
+            debug_dot(50, 0x00FFFF);
+        }
 
         char fat_name[11];
         filename_to_fat(component, fat_name);
 
         int found_in_path_step = 0;
         uint32_t dir_cluster = current_cluster;
+        if (dir_cluster == 0) dir_cluster = bpb.root_cluster;
         
-        while (dir_cluster < 0x0FFFFFF8) {
+        char lfn_buffer[256];
+        lfn_buffer[0] = 0;
+
+        while (dir_cluster >= 2 && dir_cluster < 0x0FFFFFF8) {
             for (uint32_t s = 0; s < bpb.sectors_per_cluster; s++) {
                 uint32_t sector = get_sector_for_cluster(dir_cluster) + s;
+                
+                // Blue dot: reading sector
+                debug_dot(20, 0x0000FF);
+                
                 if (ata_read_sectors(current_drive, sector, 1, sector_buffer) != 0) return -1;
 
-                struct fat32_directory_entry* entries = (struct fat32_directory_entry*)sector_buffer;
                 for (int j = 0; j < 16; j++) {
-                    if (entries[j].name[0] == 0) return -1; // No more entries in this directory
-                    if (entries[j].name[0] == 0xE5) continue; // Deleted
+                    uint8_t* entry_ptr = sector_buffer + (j * 32);
+                    if (entry_ptr[0] == 0) goto cluster_done;
                     
-                    int match = 1;
-                    for (int k = 0; k < 11; k++) {
-                        if (entries[j].name[k] != fat_name[k]) { match = 0; break; }
-                    }
-                    if (match) {
-                        current_cluster = entries[j].cluster_low | (entries[j].cluster_high << 16);
-                        if (*p == 0) {
-                            if (out_entry) *out_entry = entries[j];
-                            return 0;
+                    // Moving orange dot: processing entry j
+                    debug_dot(125 + (j % 5), 0xFFA500);
+
+                    if (entry_ptr[0] == 0xE5) { lfn_buffer[0] = 0; continue; }
+
+                    if (entry_ptr[11] == 0x0F) {
+                        struct fat32_lfn_entry* lfn = (struct fat32_lfn_entry*)entry_ptr;
+                        int sequence = (lfn->order & 0x3F);
+                        if (sequence > 0 && sequence <= 20) {
+                            int index = (sequence - 1) * 13;
+                            uint16_t* n1 = lfn->name1; uint16_t* n2 = lfn->name2; uint16_t* n3 = lfn->name3;
+                            for(int k=0; k<5; k++) lfn_buffer[index + k] = (n1[k] == 0 || n1[k] == 0xFFFF) ? 0 : (char)(n1[k] & 0xFF);
+                            for(int k=0; k<6; k++) lfn_buffer[index + 5 + k] = (n2[k] == 0 || n2[k] == 0xFFFF) ? 0 : (char)(n2[k] & 0xFF);
+                            for(int k=0; k<2; k++) lfn_buffer[index + 11 + k] = (n3[k] == 0 || n3[k] == 0xFFFF) ? 0 : (char)(n3[k] & 0xFF);
+                            if (lfn->order & 0x40) lfn_buffer[index + 13] = 0; // Ensure some termination
                         }
+                        continue;
+                    }
+
+                    struct fat32_directory_entry* entry = (struct fat32_directory_entry*)entry_ptr;
+                    if (entry->attributes & 0x08) { lfn_buffer[0] = 0; continue; }
+
+                    // Debug: White dot if it's a directory
+                    if (entry->attributes & 0x10) debug_dot(140, 0xFFFFFF);
+                    // Debug: Pink dot if it starts with 'A' or 'a'
+                    if (entry->name[0] == 'A' || lfn_buffer[0] == 'A' || lfn_buffer[0] == 'a') debug_dot(155, 0xFFC0CB);
+
+                    int match = 0;
+                    if (lfn_buffer[0] != 0) {
+                        match = 1;
+                        for (int k = 0; ; k++) {
+                            char c1 = component[k]; if (c1 >= 'a' && c1 <= 'z') c1 -= 32;
+                            char c2 = lfn_buffer[k]; if (c2 >= 'a' && c2 <= 'z') c2 -= 32;
+                            if (c1 != c2) { match = 0; break; }
+                            if (c1 == 0) break;
+                        }
+                    }
+
+                    if (!match) {
+                        match = 1;
+                        for (int k = 0; k < 8; k++) {
+                            if (fat_name[k] == ' ') break;
+                            if (entry->name[k] != fat_name[k]) { match = 0; break; }
+                        }
+                        // If it's a directory, it usually doesn't have an extension in SFN
+                    }
+
+                    if (match) {
+                        current_cluster = entry->cluster_low | (entry->cluster_high << 16);
+                        if (current_cluster == 0) current_cluster = bpb.root_cluster;
+                        
+                        debug_dot(65 + (component_depth-1) * 15, 0x00FF00); 
+                        if (*p == 0) { if (out_entry) *out_entry = *entry; return 0; }
                         found_in_path_step = 1;
+                        // Reset LFN for next component
+                        for(int k=0; k<255; k++) lfn_buffer[k] = 0;
                         goto next_component;
                     }
+                    for(int k=0; k<255; k++) lfn_buffer[k] = 0;
                 }
             }
             dir_cluster = get_next_cluster(dir_cluster);
         }
         
+        cluster_done:
         next_component:
-        if (!found_in_path_step) return -1;
+        if (!found_in_path_step) {
+            // Red dot: Component not found
+            debug_dot(110, 0xFF0000);
+            return -1;
+        }
     }
     return -1;
 }
+
+
 
 int fat32_read_file(const char* path, uint8_t* buffer) {
     struct fat32_directory_entry entry;
