@@ -566,6 +566,65 @@ void draw_string(uint32_t x, uint32_t y, const char* str, uint32_t color, struct
     }
 }
 
+int32_t draw_char_scaled(uint32_t x, uint32_t y, char c, uint32_t color, int scale_pct, struct multiboot_tag_framebuffer* fb) {
+    if (!arial_font_xml_data || !arial_font_data || scale_pct <= 0) return 0;
+    char search[16] = "<char id=\"";
+    int i = 10;
+    uint8_t code = (uint8_t)c;
+    if (code >= 100) { search[i++] = (code / 100) + '0'; search[i++] = ((code / 10) % 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else if (code >= 10) { search[i++] = (code / 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else { search[i++] = code + '0'; }
+    search[i++] = '\"'; search[i] = 0;
+
+    const char* tag = strstr_custom((const char*)arial_font_xml_data, search);
+    if (!tag) return 0;
+
+    int32_t cx = get_attr_value(tag, " x=");
+    int32_t cy = get_attr_value(tag, " y=");
+    int32_t cw = get_attr_value(tag, " width=");
+    int32_t ch = get_attr_value(tag, " height=");
+    int32_t ox = get_attr_value(tag, " xoffset=");
+    int32_t oy = get_attr_value(tag, " yoffset=");
+    int32_t xa = get_attr_value(tag, " xadvance=");
+
+    struct bmp_file_header* bfh = (struct bmp_file_header*)arial_font_data;
+    struct bmp_info_header* bih = (struct bmp_info_header*)(arial_font_data + sizeof(struct bmp_file_header));
+    uint8_t* pixels = arial_font_data + bfh->bfOffBits;
+    uint32_t bpp = bih->biBitCount;
+    uint32_t row_size = (bih->biWidth * (bpp / 8) + 3) & ~3;
+    int32_t img_h = bih->biHeight < 0 ? -bih->biHeight : bih->biHeight;
+
+    int32_t sw = (cw * scale_pct) / 100;
+    int32_t sh = (ch * scale_pct) / 100;
+    int32_t sox = (ox * scale_pct) / 100;
+    int32_t soy = (oy * scale_pct) / 100;
+
+    for (int32_t iy = 0; iy < sh; iy++) {
+        for (int32_t ix = 0; ix < sw; ix++) {
+            int32_t src_ix = (ix * 100) / scale_pct;
+            int32_t src_iy = (iy * 100) / scale_pct;
+            int32_t src_y = (bih->biHeight > 0) ? (img_h - 1 - (cy + src_iy)) : (cy + src_iy);
+            uint8_t* p = pixels + (src_y * row_size) + ((cx + src_ix) * (bpp / 8));
+            uint8_t alpha = (bpp == 32) ? p[3] : ((p[0] > 20 || p[1] > 20 || p[2] > 20) ? 255 : 0);
+            if (alpha > 20) {
+                uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
+                uint32_t offset = (y + soy + iy) * fb->framebuffer_pitch + (x + sox + ix) * (fb->framebuffer_bpp / 8);
+                uint32_t bg = (fb->framebuffer_bpp == 32) ? *(uint32_t*)(screen + offset) : (screen[offset+2] << 16) | (screen[offset+1] << 8) | screen[offset];
+                draw_pixel(x + sox + ix, y + soy + iy, blend_colors(bg, color, alpha), fb);
+            }
+        }
+    }
+    return (xa * scale_pct) / 100;
+}
+
+void draw_string_scaled(uint32_t x, uint32_t y, const char* str, uint32_t color, int scale_pct, struct multiboot_tag_framebuffer* fb) {
+    if (!str) return;
+    while (*str) {
+        x += draw_char_scaled(x, y, *str, color, scale_pct, fb);
+        str++;
+    }
+}
+
 void uint_to_hex(uint64_t n, char* out, int digits) {
     const char* hex = "0123456789ABCDEF";
     for (int i = 0; i < digits; i++) {
@@ -593,6 +652,27 @@ uint32_t get_string_width(const char* str) {
     if (!str) return 0;
     uint32_t w = 0;
     while (*str) { w += get_char_width(*str); str++; }
+    return w;
+}
+
+int32_t get_char_width_scaled(char c, int scale_pct) {
+    if (!arial_font_xml_data || scale_pct <= 0) return 0;
+    char search[16] = "<char id=\"";
+    int i = 10;
+    uint8_t code = (uint8_t)c;
+    if (code >= 100) { search[i++] = (code / 100) + '0'; search[i++] = ((code / 10) % 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else if (code >= 10) { search[i++] = (code / 10) + '0'; search[i++] = (code % 10) + '0'; }
+    else { search[i++] = code + '0'; }
+    search[i++] = '\"'; search[i] = 0;
+    const char* tag = strstr_custom((const char*)arial_font_xml_data, search);
+    if (!tag) return 0;
+    return (get_attr_value(tag, " xadvance=") * scale_pct) / 100;
+}
+
+uint32_t get_string_width_scaled(const char* str, int scale_pct) {
+    if (!str || scale_pct <= 0) return 0;
+    uint32_t w = 0;
+    while (*str) { w += get_char_width_scaled(*str, scale_pct); str++; }
     return w;
 }
 
@@ -855,6 +935,11 @@ void kernel_main(uint64_t multiboot_addr) {
         // 3. Desktop ikonok kirajzolása
         if (file_explorer_icon_data) {
             draw_icon_scaled(30, 30, 48, 48, file_explorer_icon_data, fb);
+            const char* explorer_label = "File explorer";
+            uint32_t label_w = get_string_width_scaled(explorer_label, 65);
+            int32_t label_x = 30 + (48 - (int32_t)label_w) / 2;
+            if (label_x < 0) label_x = 0;
+            draw_string_scaled((uint32_t)label_x, 30 + 48 + 5, explorer_label, 0xFFFFFF, 65, fb);
         }
 
 
