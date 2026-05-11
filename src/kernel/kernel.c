@@ -823,7 +823,7 @@ void kernel_main(uint64_t multiboot_addr) {
         idt_load(&idtp);
         mouse_init();
 
-        // 1. Képernyő törlése (feketére), hogy a debug pöttyök látszódjanak
+        // 1. Képernyő törlése (feketére)
         for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
             for (uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
         }
@@ -850,41 +850,23 @@ void kernel_main(uint64_t multiboot_addr) {
             }
         }
 
-        // 3. Kernel szintű indikátorok (színes pöttyök legfelül)
-        if (vfs_res == 0) {
-            for(int i=0; i<10; i++) for(int j=0; j<10; j++) draw_pixel(5+i, 5+j, 0x00FF00, fb); // Green: VFS OK
-        } else {
-            for(int i=0; i<10; i++) for(int j=0; j<10; j++) draw_pixel(5+i, 5+j, 0xFF0000, fb); // Red: VFS Fail
-        }
-
-        if (wallpaper_data) {
-            for(int i=0; i<10; i++) for(int j=0; j<10; j++) draw_pixel(20+i, 5+j, 0x0000FF, fb); // Blue: Wall OK
-        }
-        if (arial_font_data && arial_font_xml_data) {
-            for(int i=0; i<10; i++) for(int j=0; j<10; j++) draw_pixel(35+i, 5+j, 0x00FFFF, fb); // Cyan: Font OK
-        }
-
         draw_dock(fb);
         draw_status_bar(fb);
 
-
-
         // Hálózat inicializálása
-        net_status = 5; draw_dock(fb); // PCI Scan Start (Fehér)
         struct pci_device net_dev;
         if (pci_find_device(0xFFFF, 0xFFFF, &net_dev)) {
             if (net_dev.vendor_id == 0x8086 && (net_dev.device_id == 0x100E || net_dev.device_id == 0x100F || net_dev.device_id == 0x10D3)) {
                 if (e1000_init(&net_dev) == 0) {
-                    net_status = 1; draw_dock(fb); // Intel E1000 kész (Piros)
+                    net_status = 1;
                     net_init((10) | (0 << 8) | (2 << 16) | (15 << 24));
                     msleep(500); // Várjunk, amíg a link stabilizálódik a bridge-en
                 }
-            } else {
-                net_status = 4; draw_dock(fb); // Más kártya (Kék)
             }
-        } else {
-            net_status = 0; draw_dock(fb); // Semmi (Nincs pötty)
         }
+        
+        draw_dock(fb);
+
         uint32_t margin = 20;
         uint32_t dock_h = 55, dock_x = margin, dock_w = fb->framebuffer_width - 2 * margin, dock_y = fb->framebuffer_height - dock_h - margin;
         struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
@@ -928,12 +910,6 @@ void kernel_main(uint64_t multiboot_addr) {
                 }
             }
             if (ntp_retry_timer > 0) ntp_retry_timer--;
-
-            // Külön ellenőrzés: Ha a DHCP OK, de még a REQUEST fázisban vagyunk a UI szerint
-            if (net_dhcp_ok() && net_status == 8) {
-                // Várunk egy picit, hátha jön az NTP, de legalább ne DHCP REQ-et írjunk
-                // net_status = 2; // Vissza 'SEND NTP' állapotba (vagy egy új 'DHCP OK' állapotba)
-            }
 
             uint8_t h, m;
             get_time(&h, &m);
@@ -987,7 +963,6 @@ void kernel_main(uint64_t multiboot_addr) {
                             draw_string((screen_w - get_string_width(shutdown_msg)) / 2, screen_h / 2, shutdown_msg, 0xFFFFFF, fb);
                             msleep(800);
                             shutdown(multiboot_addr);
-                            // Ha az ACPI/emulator shutdown sikertelen:
                             for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
                             const char* safe_msg = "It is now safe to turn off your computer.";
                             draw_string((screen_w - get_string_width(safe_msg)) / 2, screen_h / 2, safe_msg, 0xFFFFFF, fb);
@@ -1004,14 +979,12 @@ void kernel_main(uint64_t multiboot_addr) {
                 }
                 else if (mx >= icon_x && mx <= icon_x + icon_w && my >= icon_y && my <= icon_y + icon_h) power_menu_open = !power_menu_open;
                 else if (power_menu_open) {
-                    // Restart opció: current_y + 20, hit area
                     if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + menu_w) && my >= (int32_t)(menu_y + 10) && my <= (int32_t)(menu_y + 60)) {
                         dialog_state = 1; power_menu_open = 0; power_menu_progress = 0;
                         hide_cursor(fb);
                         draw_power_menu(fb, 0);
                         draw_dialog(fb, "Restart", "Are you sure you want to restart the system?");
                     }
-                    // Shutdown opció: current_y + 80, hit area
                     else if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + menu_w) && my >= (int32_t)(menu_y + 70) && my <= (int32_t)(menu_y + 120)) {
                         dialog_state = 2; power_menu_open = 0; power_menu_progress = 0;
                         hide_cursor(fb);
