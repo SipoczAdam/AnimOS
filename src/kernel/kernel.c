@@ -25,6 +25,7 @@ uint8_t* arial_font_data = 0;
 uint8_t* arial_font_xml_data = 0;
 uint8_t* offline_icon_data = 0;
 uint8_t* online_icon_data = 0;
+uint8_t* file_explorer_icon_data = 0;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -831,7 +832,7 @@ void kernel_main(uint64_t multiboot_addr) {
         int vfs_res = vfs_init();
 
         // Dynamically load assets from disk
-        wallpaper_data = load_asset("Sysroot:/AnimOS/assets/wallpapers/solstice.bmp");
+        wallpaper_data = load_asset("Sysroot:/AnimOS/assets/wallpapers/bubble.bmp");
         init_wallpaper_info();
         
         cursor_data = load_asset("Sysroot:/AnimOS/assets/cursor/Default/Normal Select.cur");
@@ -840,6 +841,7 @@ void kernel_main(uint64_t multiboot_addr) {
         arial_font_xml_data = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.xml");
         offline_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/offline.bmp");
         online_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/online.bmp");
+        file_explorer_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/file_explorer.bmp");
 
         // 2. UI fázis: Háttérkép kirajzolása (most már az adatokkal)
         if (wallpaper_data) {
@@ -849,6 +851,12 @@ void kernel_main(uint64_t multiboot_addr) {
                 }
             }
         }
+
+        // 3. Desktop ikonok kirajzolása
+        if (file_explorer_icon_data) {
+            draw_icon_scaled(30, 30, 48, 48, file_explorer_icon_data, fb);
+        }
+
 
         draw_dock(fb);
         draw_status_bar(fb);
