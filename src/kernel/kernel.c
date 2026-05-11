@@ -32,6 +32,8 @@ uint32_t screen_h = 768;
 int32_t cursor_w = 32;
 int32_t cursor_h = 32;
 int net_status = 0; // 0: None, 1: Found, 2: Sent, 3: Synced
+int selected_icon = -1; // -1: None, 0: File Explorer
+int hover_icon = -1;    // -1: None, 0: File Explorer
 
 void msleep(uint32_t ms);
 void init_wallpaper_info();
@@ -886,6 +888,50 @@ void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const 
     draw_string(start_btn_x + btn_w + spacing + (btn_w - cancel_w) / 2, btn_y + (btn_h - 18) / 2, "Cancel", 0x333333, fb);
 }
 
+void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
+    if (file_explorer_icon_data) {
+        uint32_t icon_x = 30, icon_y = 30, icon_w = 48, icon_h = 48;
+        const char* label = "File explorer";
+        uint32_t label_w = get_string_width_scaled(label, 65);
+        uint32_t total_w = (label_w > icon_w) ? label_w + 20 : icon_w + 20;
+        uint32_t total_h = icon_h + 5 + 18 + 10;
+        uint32_t rect_x = icon_x + icon_w/2 - total_w/2;
+        uint32_t rect_y = icon_y - 5;
+
+        // Restore wallpaper background for the entire icon area
+        for (uint32_t y = rect_y; y < rect_y + total_h; y++) {
+            for (uint32_t x = rect_x; x < rect_x + total_w; x++) {
+                draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb);
+            }
+        }
+
+        // Kijelölés/Hover háttér kirajzolása (ikon mögé)
+        if (selected_icon == 0 || hover_icon == 0) {
+            uint32_t bg_color = 0xAAAAAA; // Ugyanolyan világosszürke mindkét állapotban
+            uint8_t alpha = 100;
+            uint32_t radius = 10;
+            for (uint32_t y = rect_y; y < rect_y + total_h; y++) {
+                for (uint32_t x = rect_x; x < rect_x + total_w; x++) {
+                    uint8_t a = alpha; uint32_t dx = 0, dy = 0; int is_corner = 0;
+                    if (x < rect_x + radius && y < rect_y + radius) { dx = (rect_x + radius) - x; dy = (rect_y + radius) - y; is_corner = 1; }
+                    else if (x > rect_x + total_w - radius && y < rect_y + radius) { dx = x - (rect_x + total_w - radius); dy = (rect_y + radius) - y; is_corner = 1; }
+                    else if (x < rect_x + radius && y > rect_y + total_h - radius) { dx = (rect_x + radius) - x; dy = y - (rect_y + total_h - radius); is_corner = 1; }
+                    else if (x > rect_x + total_w - radius && y > rect_y + total_h - radius) { dx = x - (rect_x + total_w - radius); dy = y - (rect_y + total_h - radius); is_corner = 1; }
+                    if (is_corner) { if (dx*dx + dy*dy >= radius * radius) a = 0; }
+                    if (a > 0) draw_pixel(x, y, blend_colors(get_wallpaper_pixel_fast(x, y, fb), bg_color, a), fb);
+                }
+            }
+        }
+
+        draw_icon_scaled(icon_x, icon_y, icon_w, icon_h, file_explorer_icon_data, fb);
+        
+        // Centered label calculation
+        int32_t lx = (int32_t)icon_x + ((int32_t)icon_w / 2) - ((int32_t)label_w / 2);
+        if (lx < 0) lx = 0;
+        draw_string_scaled((uint32_t)lx, icon_y + icon_h + 5, label, 0xFFFFFF, 65, fb);
+    }
+}
+
 void kernel_main(uint64_t multiboot_addr) {
     struct multiboot_tag_framebuffer* fb = 0;
     struct multiboot_tag* tag;
@@ -933,15 +979,7 @@ void kernel_main(uint64_t multiboot_addr) {
         }
 
         // 3. Desktop ikonok kirajzolása
-        if (file_explorer_icon_data) {
-            draw_icon_scaled(30, 30, 48, 48, file_explorer_icon_data, fb);
-            const char* explorer_label = "File explorer";
-            uint32_t label_w = get_string_width_scaled(explorer_label, 65);
-            int32_t label_x = 30 + (48 - (int32_t)label_w) / 2;
-            if (label_x < 0) label_x = 0;
-            draw_string_scaled((uint32_t)label_x, 30 + 48 + 5, explorer_label, 0xFFFFFF, 65, fb);
-        }
-
+        draw_desktop_icons(fb);
 
         draw_dock(fb);
         draw_status_bar(fb);
@@ -1014,15 +1052,49 @@ void kernel_main(uint64_t multiboot_addr) {
                 hide_cursor(fb);
                 draw_dock(fb);
                 draw_status_bar(fb);
+                draw_desktop_icons(fb);
                 if (dialog_state == 1) draw_dialog(fb, "Restart", "Are you sure you want to restart the system?");
                 else if (dialog_state == 2) draw_dialog(fb, "Shutdown", "Are you sure you want to shutdown the system?");
                 draw_cursor(mouse_x, mouse_y, fb);
             }
 
             int32_t mx = mouse_x, my = mouse_y;
+
+            // Hover detection for desktop icons
+            int current_hover = -1;
+            // File explorer hit box (ikon és szöveg területe)
+            if (mx >= 20 && mx <= 120 && my >= 20 && my <= 100) {
+                current_hover = 0;
+            }
+
+            if (current_hover != hover_icon) {
+                hover_icon = current_hover;
+                hide_cursor(fb);
+                draw_desktop_icons(fb);
+                draw_cursor(mx, my, fb);
+            }
+
             if (mouse_clicked) {
                 mouse_clicked = 0;
                 uint32_t menu_w = 200, menu_h = 120, menu_x = dock_x, menu_y = dock_y - menu_h - 10;
+
+                // Desktoppon kattintás kezelése
+                if (hover_icon != -1) {
+                    if (selected_icon != hover_icon) {
+                        selected_icon = hover_icon;
+                        hide_cursor(fb);
+                        draw_desktop_icons(fb);
+                        draw_cursor(mx, my, fb);
+                    }
+                } else if (selected_icon != -1) {
+                    // Kattintás máshova: kijelölés megszüntetése (kivéve ha épp menüt vagy gombot nyomunk)
+                    if (my < (int32_t)dock_y) {
+                        selected_icon = -1;
+                        hide_cursor(fb);
+                        draw_desktop_icons(fb);
+                        draw_cursor(mx, my, fb);
+                    }
+                }
                 
                 if (dialog_state != 0) {
                     const char* msg = (dialog_state == 1) ? "Are you sure you want to restart the system?" : "Are you sure you want to shutdown the system?";
