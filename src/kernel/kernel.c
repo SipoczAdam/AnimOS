@@ -27,6 +27,9 @@ uint8_t* offline_icon_data = 0;
 uint8_t* online_icon_data = 0;
 uint8_t* file_explorer_icon_data = 0;
 uint8_t* preferences_icon_data = 0;
+uint8_t* close_icon_data = 0;
+uint8_t* minimize_icon_data = 0;
+uint8_t* maximize_icon_data = 0;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -35,6 +38,9 @@ int32_t cursor_h = 32;
 int net_status = 0; // 0: None, 1: Found, 2: Sent, 3: Synced
 int selected_icon = -1; // -1: None, 0: File Explorer
 int hover_icon = -1;    // -1: None, 0: File Explorer
+int preferences_window_open = 0;
+uint32_t last_click_time = 0;
+int last_clicked_icon = -1;
 
 void msleep(uint32_t ms);
 void init_wallpaper_info();
@@ -264,8 +270,9 @@ uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
 }
 
 uint32_t cursor_buffer[64 * 64];
-uint32_t menu_area_buffer[200 * 300]; 
+uint32_t menu_area_buffer[200 * 300];
 uint32_t icon_area_buffer[150 * 150]; // Buffer for flicker-free icon rendering
+uint32_t preferences_window_buffer[600 * 400]; // Buffer for flicker-free preferences window rendering
 int32_t last_mouse_x = -1, last_mouse_y = -1;
 
 struct wallpaper_info {
@@ -605,11 +612,24 @@ int32_t draw_char_scaled(uint32_t x, uint32_t y, char c, uint32_t color, int sca
 
     for (int32_t iy = 0; iy < sh; iy++) {
         for (int32_t ix = 0; ix < sw; ix++) {
-            int32_t src_ix = (ix * 100) / scale_pct;
-            int32_t src_iy = (iy * 100) / scale_pct;
-            int32_t src_y = (bih->biHeight > 0) ? (img_h - 1 - (cy + src_iy)) : (cy + src_iy);
-            uint8_t* p = pixels + (src_y * row_size) + ((cx + src_ix) * (bpp / 8));
-            uint8_t alpha = (bpp == 32) ? p[3] : ((p[0] > 20 || p[1] > 20 || p[2] > 20) ? 255 : 0);
+            uint32_t src_x_start = (ix * 100) / scale_pct;
+            uint32_t src_x_end = ((ix + 1) * 100) / scale_pct;
+            uint32_t src_y_start = (iy * 100) / scale_pct;
+            uint32_t src_y_end = ((iy + 1) * 100) / scale_pct;
+            if (src_x_end <= src_x_start) src_x_end = src_x_start + 1;
+            if (src_y_end <= src_y_start) src_y_end = src_y_start + 1;
+
+            uint32_t a_sum = 0, count = 0;
+            for (uint32_t sy = src_y_start; sy < src_y_end; sy++) {
+                for (uint32_t sx = src_x_start; sx < src_x_end; sx++) {
+                    int32_t real_y = (bih->biHeight > 0) ? (img_h - 1 - (cy + sy)) : (cy + sy);
+                    uint8_t* p = pixels + (real_y * row_size) + ((cx + sx) * (bpp / 8));
+                    a_sum += (bpp == 32) ? p[3] : ((p[0] > 20 || p[1] > 20 || p[2] > 20) ? 255 : 0);
+                    count++;
+                }
+            }
+            uint8_t alpha = a_sum / count;
+
             if (alpha > 20) {
                 uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
                 uint32_t offset = (y + soy + iy) * fb->framebuffer_pitch + (x + sox + ix) * (fb->framebuffer_bpp / 8);
@@ -890,6 +910,90 @@ void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const 
     draw_string(start_btn_x + btn_w + spacing + (btn_w - cancel_w) / 2, btn_y + (btn_h - 18) / 2, "Cancel", 0x333333, fb);
 }
 
+void draw_preferences_window(struct multiboot_tag_framebuffer* fb) {
+    uint32_t w = 600;
+    uint32_t h = 400;
+    uint32_t x = (fb->framebuffer_width - w) / 2;
+    uint32_t y = (fb->framebuffer_height - h) / 2;
+    uint32_t radius = 12;
+    uint32_t title_bar_h = 40;
+
+    // Create a temporary framebuffer for the window
+    struct multiboot_tag_framebuffer temp_fb = *fb;
+    temp_fb.framebuffer_addr = (uint64_t)preferences_window_buffer;
+    temp_fb.framebuffer_width = w;
+    temp_fb.framebuffer_height = h;
+    temp_fb.framebuffer_pitch = w * (fb->framebuffer_bpp / 8);
+
+    // 1. Render window content to buffer
+    for (uint32_t iy = 0; iy < h; iy++) {
+        for (uint32_t ix = 0; ix < w; ix++) {
+            uint8_t alpha = 255;
+            uint32_t dx = 0, dy = 0;
+            int is_corner = 0;
+            if (ix < radius && iy < radius) { dx = radius - ix; dy = radius - iy; is_corner = 1; }
+            else if (ix > w - radius && iy < radius) { dx = ix - (w - radius); dy = radius - iy; is_corner = 1; }
+            else if (ix < radius && iy > h - radius) { dx = radius - ix; dy = iy - (h - radius); is_corner = 1; }
+            else if (ix > w - radius && iy > h - radius) { dx = ix - (w - radius); dy = iy - (h - radius); is_corner = 1; }
+            
+            if (is_corner) {
+                if (dx*dx + dy*dy >= radius * radius) alpha = 0;
+            }
+            
+            uint32_t final_color = 0;
+            if (alpha > 0) {
+                uint32_t color = 0xFFFFFF;
+                if (iy < title_bar_h) {
+                    color = 0xF0F0F0;
+                }
+                final_color = blend_colors(get_wallpaper_pixel_fast(x + ix, y + iy, fb), color, alpha);
+            } else {
+                final_color = get_wallpaper_pixel_fast(x + ix, y + iy, fb);
+            }
+
+            uint32_t offset = iy * temp_fb.framebuffer_pitch + ix * (fb->framebuffer_bpp / 8);
+            if (fb->framebuffer_bpp == 32) { *(uint32_t*)((uint8_t*)temp_fb.framebuffer_addr + offset) = final_color; }
+            else {
+                uint8_t* p = (uint8_t*)temp_fb.framebuffer_addr + offset;
+                p[0] = final_color & 0xFF; p[1] = (final_color >> 8) & 0xFF; p[2] = (final_color >> 16) & 0xFF;
+            }
+        }
+    }
+
+    // Title bar text and icons on the buffer
+    int title_scale = 80;
+    uint32_t title_w = get_string_width_scaled("Preferences", title_scale);
+    draw_string_scaled(20, (title_bar_h - (18 * title_scale / 100)) / 2, "Preferences", 0x333333, title_scale, &temp_fb);
+
+    uint32_t btn_size = 22;
+    uint32_t btn_y = (title_bar_h - btn_size) / 2;
+    uint32_t close_x = w - btn_size - 12;
+    uint32_t max_x = close_x - btn_size - 8;
+    uint32_t min_x = max_x - btn_size - 8;
+
+    if (close_icon_data) draw_icon_scaled(close_x, btn_y, btn_size, btn_size, close_icon_data, &temp_fb);
+    if (maximize_icon_data) draw_icon_scaled(max_x, btn_y, btn_size, btn_size, maximize_icon_data, &temp_fb);
+    if (minimize_icon_data) draw_icon_scaled(min_x, btn_y, btn_size, btn_size, minimize_icon_data, &temp_fb);
+
+    for(uint32_t ix = 0; ix < w; ix++) {
+        draw_pixel(ix, title_bar_h, 0xDDDDDD, &temp_fb);
+    }
+
+    // 2. Atomic copy to the real framebuffer
+    for (uint32_t iy = 0; iy < h; iy++) {
+        for (uint32_t ix = 0; ix < w; ix++) {
+            uint32_t offset = iy * temp_fb.framebuffer_pitch + ix * (fb->framebuffer_bpp / 8);
+            uint32_t color;
+            if (fb->framebuffer_bpp == 32) { color = *(uint32_t*)((uint8_t*)temp_fb.framebuffer_addr + offset); }
+            else {
+                uint8_t* p = (uint8_t*)temp_fb.framebuffer_addr + offset;
+                color = (p[2] << 16) | (p[1] << 8) | p[0];
+            }
+            draw_pixel(x + ix, y + iy, color, fb);
+        }
+    }
+}
+
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
     uint32_t icon_xs[] = {30, 30};
     uint32_t icon_ys[] = {30, 130};
@@ -1007,6 +1111,9 @@ void kernel_main(uint64_t multiboot_addr) {
         online_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/online.bmp");
         file_explorer_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/file_explorer.bmp");
         preferences_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/preferences.bmp");
+        close_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/close.bmp");
+        minimize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/minimize.bmp");
+        maximize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/maximize.bmp");
 
         // 2. UI fázis: Háttérkép kirajzolása (most már az adatokkal)
         if (wallpaper_data) {
@@ -1050,8 +1157,10 @@ void kernel_main(uint64_t multiboot_addr) {
         uint32_t ntp_retry_timer = 0;
         int last_displayed_status = -1;
         uint32_t link_stable_count = 0;
+        uint32_t ticks = 0;
 
         while(1) { 
+            ticks++;
             // Link állapot ellenőrzése stabilitási számlálóval
             int current_link = e1000_link_up();
             if (current_link) {
@@ -1092,6 +1201,7 @@ void kernel_main(uint64_t multiboot_addr) {
                 draw_dock(fb);
                 draw_status_bar(fb);
                 draw_desktop_icons(fb);
+                if (preferences_window_open) draw_preferences_window(fb);
                 if (dialog_state == 1) draw_dialog(fb, "Restart", "Are you sure you want to restart the system?");
                 else if (dialog_state == 2) draw_dialog(fb, "Shutdown", "Are you sure you want to shutdown the system?");
                 draw_cursor(mouse_x, mouse_y, fb);
@@ -1112,6 +1222,7 @@ void kernel_main(uint64_t multiboot_addr) {
                 hover_icon = current_hover;
                 hide_cursor(fb);
                 draw_desktop_icons(fb);
+                if (preferences_window_open) draw_preferences_window(fb);
                 draw_cursor(mx, my, fb);
             }
 
@@ -1119,12 +1230,30 @@ void kernel_main(uint64_t multiboot_addr) {
                 mouse_clicked = 0;
                 uint32_t menu_w = 200, menu_h = 120, menu_x = dock_x, menu_y = dock_y - menu_h - 10;
 
+                // Double click detection
+                int is_double_click = 0;
+                if (hover_icon != -1 && hover_icon == last_clicked_icon && (ticks - last_click_time) < 50) {
+                    is_double_click = 1;
+                }
+                last_click_time = ticks;
+                last_clicked_icon = hover_icon;
+
+                if (is_double_click && hover_icon == 1) {
+                    if (!preferences_window_open) {
+                        preferences_window_open = 1;
+                        hide_cursor(fb);
+                        draw_preferences_window(fb);
+                        draw_cursor(mx, my, fb);
+                    }
+                }
+
                 // Desktoppon kattintás kezelése
                 if (hover_icon != -1) {
                     if (selected_icon != hover_icon) {
                         selected_icon = hover_icon;
                         hide_cursor(fb);
                         draw_desktop_icons(fb);
+                        if (preferences_window_open) draw_preferences_window(fb);
                         draw_cursor(mx, my, fb);
                     }
                 } else if (selected_icon != -1) {
@@ -1133,6 +1262,7 @@ void kernel_main(uint64_t multiboot_addr) {
                         selected_icon = -1;
                         hide_cursor(fb);
                         draw_desktop_icons(fb);
+                        if (preferences_window_open) draw_preferences_window(fb);
                         draw_cursor(mx, my, fb);
                     }
                 }
