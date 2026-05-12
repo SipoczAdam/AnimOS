@@ -26,6 +26,7 @@ uint8_t* arial_font_xml_data = 0;
 uint8_t* offline_icon_data = 0;
 uint8_t* online_icon_data = 0;
 uint8_t* file_explorer_icon_data = 0;
+uint8_t* preferences_icon_data = 0;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -890,73 +891,80 @@ void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const 
 }
 
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
-    if (file_explorer_icon_data) {
-        uint32_t icon_x = 30, icon_y = 30, icon_w = 48, icon_h = 48;
-        const char* label = "File explorer";
-        uint32_t label_w = get_string_width_scaled(label, 65);
-        uint32_t total_w = (label_w > icon_w) ? label_w + 20 : icon_w + 20;
-        uint32_t total_h = icon_h + 5 + 18 + 10;
-        uint32_t rect_x = icon_x + icon_w/2 - total_w/2;
-        uint32_t rect_y = icon_y - 5;
+    uint32_t icon_xs[] = {30, 30};
+    uint32_t icon_ys[] = {30, 130};
+    const char* labels[] = {"File explorer", "Preferences"};
+    uint8_t* icon_datas[] = {file_explorer_icon_data, preferences_icon_data};
 
-        if (total_w > 150) total_w = 150;
-        if (total_h > 150) total_h = 150;
+    for (int i = 0; i < 2; i++) {
+        if (icon_datas[i]) {
+            uint32_t icon_x = icon_xs[i], icon_y = icon_ys[i], icon_w = 48, icon_h = 48;
+            const char* label = labels[i];
+            uint32_t label_w = get_string_width_scaled(label, 65);
+            uint32_t total_w = (label_w > icon_w) ? label_w + 20 : icon_w + 20;
+            uint32_t total_h = icon_h + 5 + 18 + 10;
+            uint32_t rect_x = icon_x + icon_w/2 - total_w/2;
+            uint32_t rect_y = icon_y - 5;
 
-        // Create a temporary framebuffer for the icon area
-        struct multiboot_tag_framebuffer temp_fb = *fb;
-        temp_fb.framebuffer_addr = (uint64_t)icon_area_buffer;
-        temp_fb.framebuffer_width = total_w;
-        temp_fb.framebuffer_height = total_h;
-        temp_fb.framebuffer_pitch = total_w * (fb->framebuffer_bpp / 8);
+            if (total_w > 150) total_w = 150;
+            if (total_h > 150) total_h = 150;
 
-        // 1. Composite into temp buffer (starting at 0,0 relative to the area)
-        for (uint32_t y = 0; y < total_h; y++) {
-            for (uint32_t x = 0; x < total_w; x++) {
-                // Get wallpaper pixel for the background
-                uint32_t bg = get_wallpaper_pixel_fast(rect_x + x, rect_y + y, fb);
-                
-                // Selection/Hover background
-                if (selected_icon == 0 || hover_icon == 0) {
-                    uint32_t bg_color = 0xAAAAAA;
-                    uint8_t alpha = 100;
-                    uint32_t radius = 10;
-                    uint32_t dx = 0, dy = 0; int is_corner = 0;
-                    if (x < radius && y < radius) { dx = radius - x; dy = radius - y; is_corner = 1; }
-                    else if (x > total_w - radius && y < radius) { dx = x - (total_w - radius); dy = radius - y; is_corner = 1; }
-                    else if (x < radius && y > total_h - radius) { dx = radius - x; dy = y - (total_h - radius); is_corner = 1; }
-                    else if (x > total_w - radius && y > total_h - radius) { dx = x - (total_w - radius); dy = y - (total_h - radius); is_corner = 1; }
+            // Create a temporary framebuffer for the icon area
+            struct multiboot_tag_framebuffer temp_fb = *fb;
+            temp_fb.framebuffer_addr = (uint64_t)icon_area_buffer;
+            temp_fb.framebuffer_width = total_w;
+            temp_fb.framebuffer_height = total_h;
+            temp_fb.framebuffer_pitch = total_w * (fb->framebuffer_bpp / 8);
+
+            // 1. Composite into temp buffer (starting at 0,0 relative to the area)
+            for (uint32_t y = 0; y < total_h; y++) {
+                for (uint32_t x = 0; x < total_w; x++) {
+                    // Get wallpaper pixel for the background
+                    uint32_t bg = get_wallpaper_pixel_fast(rect_x + x, rect_y + y, fb);
                     
-                    uint8_t a = alpha;
-                    if (is_corner) { if (dx*dx + dy*dy >= radius * radius) a = 0; }
-                    if (a > 0) bg = blend_colors(bg, bg_color, a);
-                }
-                
-                // Write background to temp buffer
-                uint32_t offset = y * temp_fb.framebuffer_pitch + x * (fb->framebuffer_bpp / 8);
-                if (fb->framebuffer_bpp == 32) { *(uint32_t*)((uint8_t*)temp_fb.framebuffer_addr + offset) = bg; }
-                else { 
-                    uint8_t* p = (uint8_t*)temp_fb.framebuffer_addr + offset;
-                    p[0] = bg & 0xFF; p[1] = (bg >> 8) & 0xFF; p[2] = (bg >> 16) & 0xFF;
+                    // Selection/Hover background
+                    if (selected_icon == i || hover_icon == i) {
+                        uint32_t bg_color = 0xAAAAAA;
+                        uint8_t alpha = 100;
+                        uint32_t radius = 10;
+                        uint32_t dx = 0, dy = 0; int is_corner = 0;
+                        if (x < radius && y < radius) { dx = radius - x; dy = radius - y; is_corner = 1; }
+                        else if (x > total_w - radius && y < radius) { dx = x - (total_w - radius); dy = radius - y; is_corner = 1; }
+                        else if (x < radius && y > total_h - radius) { dx = radius - x; dy = y - (total_h - radius); is_corner = 1; }
+                        else if (x > total_w - radius && y > total_h - radius) { dx = x - (total_w - radius); dy = y - (total_h - radius); is_corner = 1; }
+                        
+                        uint8_t a = alpha;
+                        if (is_corner) { if (dx*dx + dy*dy >= radius * radius) a = 0; }
+                        if (a > 0) bg = blend_colors(bg, bg_color, a);
+                    }
+                    
+                    // Write background to temp buffer
+                    uint32_t offset = y * temp_fb.framebuffer_pitch + x * (fb->framebuffer_bpp / 8);
+                    if (fb->framebuffer_bpp == 32) { *(uint32_t*)((uint8_t*)temp_fb.framebuffer_addr + offset) = bg; }
+                    else { 
+                        uint8_t* p = (uint8_t*)temp_fb.framebuffer_addr + offset;
+                        p[0] = bg & 0xFF; p[1] = (bg >> 8) & 0xFF; p[2] = (bg >> 16) & 0xFF;
+                    }
                 }
             }
-        }
 
-        // 2. Draw icon and text on top of the temp buffer
-        draw_icon_scaled(icon_x - rect_x, icon_y - rect_y, icon_w, icon_h, file_explorer_icon_data, &temp_fb);
-        int32_t text_x = (int32_t)(icon_x - rect_x) + (int32_t)(icon_w / 2) - (int32_t)(label_w / 2);
-        draw_string_scaled((uint32_t)text_x, icon_y - rect_y + icon_h + 5, label, 0xFFFFFF, 65, &temp_fb);
+            // 2. Draw icon and text on top of the temp buffer
+            draw_icon_scaled(icon_x - rect_x, icon_y - rect_y, icon_w, icon_h, icon_datas[i], &temp_fb);
+            int32_t text_x = (int32_t)(icon_x - rect_x) + (int32_t)(icon_w / 2) - (int32_t)(label_w / 2);
+            draw_string_scaled((uint32_t)text_x, icon_y - rect_y + icon_h + 5, label, 0xFFFFFF, 65, &temp_fb);
 
-        // 3. Atomic copy to the real framebuffer
-        for (uint32_t y = 0; y < total_h; y++) {
-            for (uint32_t x = 0; x < total_w; x++) {
-                uint32_t offset = y * temp_fb.framebuffer_pitch + x * (fb->framebuffer_bpp / 8);
-                uint32_t color;
-                if (fb->framebuffer_bpp == 32) { color = *(uint32_t*)((uint8_t*)temp_fb.framebuffer_addr + offset); }
-                else {
-                    uint8_t* p = (uint8_t*)temp_fb.framebuffer_addr + offset;
-                    color = (p[2] << 16) | (p[1] << 8) | p[0];
+            // 3. Atomic copy to the real framebuffer
+            for (uint32_t y = 0; y < total_h; y++) {
+                for (uint32_t x = 0; x < total_w; x++) {
+                    uint32_t offset = y * temp_fb.framebuffer_pitch + x * (fb->framebuffer_bpp / 8);
+                    uint32_t color;
+                    if (fb->framebuffer_bpp == 32) { color = *(uint32_t*)((uint8_t*)temp_fb.framebuffer_addr + offset); }
+                    else {
+                        uint8_t* p = (uint8_t*)temp_fb.framebuffer_addr + offset;
+                        color = (p[2] << 16) | (p[1] << 8) | p[0];
+                    }
+                    draw_pixel(rect_x + x, rect_y + y, color, fb);
                 }
-                draw_pixel(rect_x + x, rect_y + y, color, fb);
             }
         }
     }
@@ -998,6 +1006,7 @@ void kernel_main(uint64_t multiboot_addr) {
         offline_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/offline.bmp");
         online_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/online.bmp");
         file_explorer_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/file_explorer.bmp");
+        preferences_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/preferences.bmp");
 
         // 2. UI fázis: Háttérkép kirajzolása (most már az adatokkal)
         if (wallpaper_data) {
@@ -1095,6 +1104,8 @@ void kernel_main(uint64_t multiboot_addr) {
             // File explorer hit box (ikon és szöveg területe)
             if (mx >= 20 && mx <= 120 && my >= 20 && my <= 100) {
                 current_hover = 0;
+            } else if (mx >= 20 && mx <= 120 && my >= 120 && my <= 200) {
+                current_hover = 1;
             }
 
             if (current_hover != hover_icon) {
