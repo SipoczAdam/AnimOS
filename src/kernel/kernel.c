@@ -142,7 +142,9 @@ void keyboard_handler_main() {
         e0_received = 1;
     } else {
         if (scancode == 0x5B || scancode == 0x5C) { // Windows key Make
-            power_menu_open = !power_menu_open;
+            if (!preferences_window_open) {
+                power_menu_open = !power_menu_open;
+            }
         }
         e0_received = 0;
     }
