@@ -19,6 +19,8 @@ struct idt_entry {
 struct idt_ptr { uint16_t limit; uint64_t base; } __attribute__((packed));
 
 uint8_t* wallpaper_data = 0;
+uint32_t* scaled_wallpaper = 0;
+uint32_t* screen_backbuffer = 0;
 uint8_t* cursor_data = 0;
 uint8_t* power_icon_data = 0;
 uint8_t* arial_font_data = 0;
@@ -45,6 +47,9 @@ int last_clicked_icon = -1;
 
 void msleep(uint32_t ms);
 void init_wallpaper_info();
+void draw_dock(struct multiboot_tag_framebuffer* fb);
+void draw_status_bar(struct multiboot_tag_framebuffer* fb);
+void draw_desktop_icons(struct multiboot_tag_framebuffer* fb);
 
 int memcmp_custom(const void* s1, const void* s2, uint32_t n) {
     const uint8_t *p1 = s1, *p2 = s2;
@@ -319,12 +324,87 @@ uint8_t* load_asset(const char* path) {
     return buffer;
 }
 
+void precompute_scaled_wallpaper(struct multiboot_tag_framebuffer* fb) {
+    if (!wallpaper_data || !wall_info.pixels) return;
+    scaled_wallpaper = (uint32_t*)malloc_custom(fb->framebuffer_width * fb->framebuffer_height * sizeof(uint32_t));
+    for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
+        for (uint32_t x = 0; x < fb->framebuffer_width; x++) {
+            int32_t abs_bmp_h = wall_info.height < 0 ? -wall_info.height : wall_info.height;
+            int32_t src_y = (wall_info.height > 0) ? (abs_bmp_h - 1 - (int32_t)(y * abs_bmp_h / fb->framebuffer_height)) : (int32_t)(y * abs_bmp_h / fb->framebuffer_height);
+            uint8_t* p = wall_info.pixels + (src_y * wall_info.row_size) + ((int32_t)(x * wall_info.width / fb->framebuffer_width) * (wall_info.bpp / 8));
+            scaled_wallpaper[y * fb->framebuffer_width + x] = (p[2] << 16) | (p[1] << 8) | p[0];
+        }
+    }
+    screen_backbuffer = (uint32_t*)malloc_custom(fb->framebuffer_width * fb->framebuffer_height * sizeof(uint32_t));
+}
+
 uint32_t get_wallpaper_pixel_fast(uint32_t x, uint32_t y, struct multiboot_tag_framebuffer* fb) {
+    if (scaled_wallpaper) {
+        if (x >= fb->framebuffer_width || y >= fb->framebuffer_height) return 0;
+        return scaled_wallpaper[y * fb->framebuffer_width + x];
+    }
     if (!wall_info.pixels) return 0;
     int32_t abs_bmp_h = wall_info.height < 0 ? -wall_info.height : wall_info.height;
     int32_t src_y = (wall_info.height > 0) ? (abs_bmp_h - 1 - (int32_t)(y * abs_bmp_h / fb->framebuffer_height)) : (int32_t)(y * abs_bmp_h / fb->framebuffer_height);
     uint8_t* p = wall_info.pixels + (src_y * wall_info.row_size) + ((int32_t)(x * wall_info.width / fb->framebuffer_width) * (wall_info.bpp / 8));
     return (p[2] << 16) | (p[1] << 8) | p[0];
+}
+
+void draw_background(struct multiboot_tag_framebuffer* fb) {
+    if (scaled_wallpaper) {
+        for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
+            uint8_t* row = (uint8_t*)fb->framebuffer_addr + y * fb->framebuffer_pitch;
+            uint32_t* src_row = scaled_wallpaper + y * screen_w;
+            if (fb->framebuffer_bpp == 32) {
+                uint32_t* row32 = (uint32_t*)row;
+                for (uint32_t x = 0; x < fb->framebuffer_width; x++) row32[x] = src_row[x];
+            } else if (fb->framebuffer_bpp == 24) {
+                for (uint32_t x = 0; x < fb->framebuffer_width; x++) {
+                    uint32_t color = src_row[x];
+                    row[x*3] = color & 0xFF; row[x*3+1] = (color >> 8) & 0xFF; row[x*3+2] = (color >> 16) & 0xFF;
+                }
+            }
+        }
+    } else {
+        for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
+            for (uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb);
+        }
+    }
+}
+
+void redraw_desktop(struct multiboot_tag_framebuffer* fb) {
+    if (!screen_backbuffer) {
+        draw_background(fb);
+        draw_desktop_icons(fb);
+        draw_dock(fb);
+        draw_status_bar(fb);
+        return;
+    }
+
+    struct multiboot_tag_framebuffer temp_fb = *fb;
+    temp_fb.framebuffer_addr = (uint64_t)screen_backbuffer;
+    temp_fb.framebuffer_pitch = fb->framebuffer_width * 4;
+    temp_fb.framebuffer_bpp = 32;
+
+    draw_background(&temp_fb);
+    draw_desktop_icons(&temp_fb);
+    draw_dock(&temp_fb);
+    draw_status_bar(&temp_fb);
+
+    // Atomic copy to real fb
+    for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
+        uint8_t* dest = (uint8_t*)fb->framebuffer_addr + y * fb->framebuffer_pitch;
+        uint32_t* src = screen_backbuffer + y * fb->framebuffer_width;
+        if (fb->framebuffer_bpp == 32) {
+            uint32_t* dest32 = (uint32_t*)dest;
+            for (uint32_t x = 0; x < fb->framebuffer_width; x++) dest32[x] = src[x];
+        } else if (fb->framebuffer_bpp == 24) {
+            for (uint32_t x = 0; x < fb->framebuffer_width; x++) {
+                uint32_t color = src[x];
+                dest[x*3] = color & 0xFF; dest[x*3+1] = (color >> 8) & 0xFF; dest[x*3+2] = (color >> 16) & 0xFF;
+            }
+        }
+    }
 }
 
 void draw_cursor(int32_t mx, int32_t my, struct multiboot_tag_framebuffer* fb) {
@@ -1166,6 +1246,7 @@ void kernel_main(uint64_t multiboot_addr) {
         // Dynamically load remaining assets from disk
         wallpaper_data = load_asset("Sysroot:/AnimOS/assets/wallpapers/bubble.bmp");
         init_wallpaper_info();
+        precompute_scaled_wallpaper(fb);
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 25, fb);
         
         cursor_data = load_asset("Sysroot:/AnimOS/assets/cursor/Default/Normal Select.cur");
@@ -1199,11 +1280,7 @@ void kernel_main(uint64_t multiboot_addr) {
 
         // --- FINAL DESKTOP PHASE ---
         if (wallpaper_data) {
-            for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
-                for (uint32_t x = 0; x < fb->framebuffer_width; x++) { 
-                    draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb); 
-                }
-            }
+            draw_background(fb);
         }
 
         draw_desktop_icons(fb);
@@ -1304,10 +1381,7 @@ void kernel_main(uint64_t multiboot_addr) {
                     if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + btn_size) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + btn_size)) {
                         preferences_window_open = 0;
                         hide_cursor(fb);
-                        for (uint32_t y = 0; y < screen_h; y++) for (uint32_t x = 0; x < screen_w; x++) draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb);
-                        draw_desktop_icons(fb);
-                        draw_dock(fb);
-                        draw_status_bar(fb);
+                        redraw_desktop(fb);
                         draw_cursor(mx, my, fb);
                         continue;
                     }
@@ -1396,8 +1470,7 @@ void kernel_main(uint64_t multiboot_addr) {
                     else if (mx >= (int32_t)(start_btn_x + btn_w + spacing) && mx <= (int32_t)(start_btn_x + 2 * btn_w + spacing) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + btn_h)) {
                         dialog_state = 0;
                         hide_cursor(fb);
-                        for(uint32_t y = dy; y < dy + dh; y++) for(uint32_t x = dx; x < dx + dw; x++) draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb);
-                        draw_dock(fb);
+                        redraw_desktop(fb);
                     }
                 }
                 else if (mx >= icon_x && mx <= icon_x + icon_w && my >= icon_y && my <= icon_y + icon_h) power_menu_open = !power_menu_open;
