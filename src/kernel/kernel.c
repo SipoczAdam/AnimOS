@@ -272,7 +272,7 @@ uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha) {
 uint32_t cursor_buffer[64 * 64];
 uint32_t menu_area_buffer[200 * 300];
 uint32_t icon_area_buffer[150 * 150]; // Buffer for flicker-free icon rendering
-uint32_t preferences_window_buffer[600 * 400]; // Buffer for flicker-free preferences window rendering
+uint32_t preferences_window_buffer[1024 * 768]; // Buffer for flicker-free preferences window rendering
 int32_t last_mouse_x = -1, last_mouse_y = -1;
 
 struct wallpaper_info {
@@ -911,11 +911,11 @@ void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const 
 }
 
 void draw_preferences_window(struct multiboot_tag_framebuffer* fb) {
-    uint32_t w = 600;
-    uint32_t h = 400;
-    uint32_t x = (fb->framebuffer_width - w) / 2;
-    uint32_t y = (fb->framebuffer_height - h) / 2;
-    uint32_t radius = 12;
+    uint32_t w = fb->framebuffer_width;
+    uint32_t h = fb->framebuffer_height;
+    uint32_t x = 0;
+    uint32_t y = 0;
+    uint32_t radius = 0;
     uint32_t title_bar_h = 40;
 
     // Create a temporary framebuffer for the window
@@ -1211,11 +1211,13 @@ void kernel_main(uint64_t multiboot_addr) {
 
             // Hover detection for desktop icons
             int current_hover = -1;
-            // File explorer hit box (ikon és szöveg területe)
-            if (mx >= 20 && mx <= 120 && my >= 20 && my <= 100) {
-                current_hover = 0;
-            } else if (mx >= 20 && mx <= 120 && my >= 120 && my <= 200) {
-                current_hover = 1;
+            if (!preferences_window_open) {
+                // File explorer hit box (ikon és szöveg területe)
+                if (mx >= 20 && mx <= 120 && my >= 20 && my <= 100) {
+                    current_hover = 0;
+                } else if (mx >= 20 && mx <= 120 && my >= 120 && my <= 200) {
+                    current_hover = 1;
+                }
             }
 
             if (current_hover != hover_icon) {
@@ -1228,6 +1230,25 @@ void kernel_main(uint64_t multiboot_addr) {
 
             if (mouse_clicked) {
                 mouse_clicked = 0;
+
+                if (preferences_window_open) {
+                    uint32_t btn_size = 22;
+                    uint32_t close_x = screen_w - btn_size - 12;
+                    uint32_t btn_y = (40 - btn_size) / 2;
+                    if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + btn_size) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + btn_size)) {
+                        preferences_window_open = 0;
+                        hide_cursor(fb);
+                        for (uint32_t y = 0; y < screen_h; y++) for (uint32_t x = 0; x < screen_w; x++) draw_pixel(x, y, get_wallpaper_pixel_fast(x, y, fb), fb);
+                        draw_desktop_icons(fb);
+                        draw_dock(fb);
+                        draw_status_bar(fb);
+                        draw_cursor(mx, my, fb);
+                        continue;
+                    }
+                    // Block other clicks to the desktop while preferences is open
+                    continue;
+                }
+
                 uint32_t menu_w = 200, menu_h = 120, menu_x = dock_x, menu_y = dock_y - menu_h - 10;
 
                 // Double click detection
