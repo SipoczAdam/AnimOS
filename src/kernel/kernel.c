@@ -995,6 +995,34 @@ void draw_preferences_window(struct multiboot_tag_framebuffer* fb) {
     }
 }
 
+void draw_boot_progress_bar(uint32_t x, uint32_t y, uint32_t w, uint32_t h, int progress, struct multiboot_tag_framebuffer* fb) {
+    uint32_t bg_color = 0x222222;
+    uint32_t border_color = 0x444444;
+    
+    // Draw background and border
+    for (uint32_t iy = 0; iy < h; iy++) {
+        for (uint32_t ix = 0; ix < w; ix++) {
+            uint32_t color = bg_color;
+            if (ix == 0 || ix == w - 1 || iy == 0 || iy == h - 1) color = border_color;
+            draw_pixel(x + ix, y + iy, color, fb);
+        }
+    }
+    
+    // Draw fill with gradient (Cyan to Purple)
+    if (progress > 0) {
+        if (progress > 100) progress = 100;
+        uint32_t fill_w = (w - 4) * progress / 100;
+        for (uint32_t iy = 2; iy < h - 2; iy++) {
+            for (uint32_t ix = 0; ix < fill_w; ix++) {
+                // Gradient calculation: mix Cyan (0x00FFFF) and Purple (0x800080) based on horizontal position
+                uint8_t alpha = (ix * 255) / (w - 4);
+                uint32_t color = blend_colors(0x00FFFF, 0x800080, alpha);
+                draw_pixel(x + 2 + ix, y + iy, color, fb);
+            }
+        }
+    }
+}
+
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
     if (preferences_window_open) return;
     uint32_t icon_xs[] = {30, 30};
@@ -1111,34 +1139,49 @@ void kernel_main(uint64_t multiboot_addr) {
             uint32_t logo_w = bih->biWidth;
             uint32_t logo_h = bih->biHeight < 0 ? -bih->biHeight : bih->biHeight;
             uint32_t logo_x = (fb->framebuffer_width - logo_w) / 2;
-            uint32_t logo_y = (fb->framebuffer_height - logo_h) / 2 - 20;
+            uint32_t logo_y = (fb->framebuffer_height - logo_h) / 2 - 80; // Feljebb vittem a logót
             draw_icon(logo_x, logo_y, boot_logo_data, fb);
         }
+
+        uint32_t bar_w = 400, bar_h = 16;
+        uint32_t bar_x = (fb->framebuffer_width - bar_w) / 2;
+        uint32_t bar_y = fb->framebuffer_height / 2 + 120; // A töltősáv a logó alatt van bőven hellyel
 
         if (arial_font_data && arial_font_xml_data) {
             const char* copyright = "AnimOS (C) 2026. All rights reserved.";
             const char* loading = "AnimOS is booting up...";
             uint32_t cp_w = get_string_width_scaled(copyright, 60);
-            uint32_t ld_w = get_string_width_scaled(loading, 50);
+            uint32_t ld_w = get_string_width_scaled(loading, 70); // Megnövelt méret (50 -> 70)
+            
+            // Copyright a képernyő legalján marad
             draw_string_scaled((fb->framebuffer_width - cp_w) / 2, fb->framebuffer_height - 60, copyright, 0x888888, 60, fb);
-            draw_string_scaled((fb->framebuffer_width - ld_w) / 2, fb->framebuffer_height - 100, loading, 0x555555, 50, fb);
+            // Loading felirat a töltősáv ALATT
+            draw_string_scaled((fb->framebuffer_width - ld_w) / 2, bar_y + 40, loading, 0x555555, 70, fb);
         }
+
+        draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 10, fb);
 
         // Dynamically load remaining assets from disk
         wallpaper_data = load_asset("Sysroot:/AnimOS/assets/wallpapers/bubble.bmp");
         init_wallpaper_info();
+        draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 25, fb);
         
         cursor_data = load_asset("Sysroot:/AnimOS/assets/cursor/Default/Normal Select.cur");
         power_icon_data = load_asset("Sysroot:/AnimOS/assets/taskbar/power.bmp");
+        draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 40, fb);
+
         offline_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/offline.bmp");
         online_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/online.bmp");
         file_explorer_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/file_explorer.bmp");
         preferences_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/preferences.bmp");
+        draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 60, fb);
+
         close_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/close.bmp");
         minimize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/minimize.bmp");
         maximize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/maximize.bmp");
+        draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 75, fb);
 
-        // Hálózat inicializálása (Ez időigényes, de most már van splash screen)
+        // Hálózat inicializálása
         struct pci_device net_dev;
         if (pci_find_device(0xFFFF, 0xFFFF, &net_dev)) {
             if (net_dev.vendor_id == 0x8086 && (net_dev.device_id == 0x100E || net_dev.device_id == 0x100F || net_dev.device_id == 0x10D3)) {
@@ -1149,6 +1192,8 @@ void kernel_main(uint64_t multiboot_addr) {
                 }
             }
         }
+        draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 100, fb);
+        msleep(200); // Rövid szünet, hogy látható legyen a 100%
 
         // --- FINAL DESKTOP PHASE ---
         if (wallpaper_data) {
