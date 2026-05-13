@@ -27,6 +27,7 @@ uint8_t* offline_icon_data = 0;
 uint8_t* online_icon_data = 0;
 uint8_t* file_explorer_icon_data = 0;
 uint8_t* preferences_icon_data = 0;
+uint8_t* boot_logo_data = 0;
 uint8_t* close_icon_data = 0;
 uint8_t* minimize_icon_data = 0;
 uint8_t* maximize_icon_data = 0;
@@ -1100,14 +1101,35 @@ void kernel_main(uint64_t multiboot_addr) {
 
         int vfs_res = vfs_init();
 
-        // Dynamically load assets from disk
+        // --- SPLASH SCREEN PHASE ---
+        boot_logo_data = load_asset("Sysroot:/AnimOS/boot/assets/boot_logo.bmp");
+        arial_font_data = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.bmp");
+        arial_font_xml_data = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.xml");
+
+        if (boot_logo_data) {
+            struct bmp_info_header* bih = (struct bmp_info_header*)(boot_logo_data + sizeof(struct bmp_file_header));
+            uint32_t logo_w = bih->biWidth;
+            uint32_t logo_h = bih->biHeight < 0 ? -bih->biHeight : bih->biHeight;
+            uint32_t logo_x = (fb->framebuffer_width - logo_w) / 2;
+            uint32_t logo_y = (fb->framebuffer_height - logo_h) / 2 - 20;
+            draw_icon(logo_x, logo_y, boot_logo_data, fb);
+        }
+
+        if (arial_font_data && arial_font_xml_data) {
+            const char* copyright = "AnimOS (C) 2026. All rights reserved.";
+            const char* loading = "AnimOS is booting up...";
+            uint32_t cp_w = get_string_width_scaled(copyright, 60);
+            uint32_t ld_w = get_string_width_scaled(loading, 50);
+            draw_string_scaled((fb->framebuffer_width - cp_w) / 2, fb->framebuffer_height - 60, copyright, 0x888888, 60, fb);
+            draw_string_scaled((fb->framebuffer_width - ld_w) / 2, fb->framebuffer_height - 100, loading, 0x555555, 50, fb);
+        }
+
+        // Dynamically load remaining assets from disk
         wallpaper_data = load_asset("Sysroot:/AnimOS/assets/wallpapers/bubble.bmp");
         init_wallpaper_info();
         
         cursor_data = load_asset("Sysroot:/AnimOS/assets/cursor/Default/Normal Select.cur");
         power_icon_data = load_asset("Sysroot:/AnimOS/assets/taskbar/power.bmp");
-        arial_font_data = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.bmp");
-        arial_font_xml_data = load_asset("Sysroot:/AnimOS/assets/fonts/arial_black/arial_black.xml");
         offline_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/offline.bmp");
         online_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/online.bmp");
         file_explorer_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/file_explorer.bmp");
@@ -1116,7 +1138,19 @@ void kernel_main(uint64_t multiboot_addr) {
         minimize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/minimize.bmp");
         maximize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/maximize.bmp");
 
-        // 2. UI fázis: Háttérkép kirajzolása (most már az adatokkal)
+        // Hálózat inicializálása (Ez időigényes, de most már van splash screen)
+        struct pci_device net_dev;
+        if (pci_find_device(0xFFFF, 0xFFFF, &net_dev)) {
+            if (net_dev.vendor_id == 0x8086 && (net_dev.device_id == 0x100E || net_dev.device_id == 0x100F || net_dev.device_id == 0x10D3)) {
+                if (e1000_init(&net_dev) == 0) {
+                    net_status = 1;
+                    net_init((10) | (0 << 8) | (2 << 16) | (15 << 24));
+                    msleep(500); 
+                }
+            }
+        }
+
+        // --- FINAL DESKTOP PHASE ---
         if (wallpaper_data) {
             for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
                 for (uint32_t x = 0; x < fb->framebuffer_width; x++) { 
@@ -1125,26 +1159,10 @@ void kernel_main(uint64_t multiboot_addr) {
             }
         }
 
-        // 3. Desktop ikonok kirajzolása
         draw_desktop_icons(fb);
-
         draw_dock(fb);
         draw_status_bar(fb);
-
-        // Hálózat inicializálása
-        struct pci_device net_dev;
-        if (pci_find_device(0xFFFF, 0xFFFF, &net_dev)) {
-            if (net_dev.vendor_id == 0x8086 && (net_dev.device_id == 0x100E || net_dev.device_id == 0x100F || net_dev.device_id == 0x10D3)) {
-                if (e1000_init(&net_dev) == 0) {
-                    net_status = 1;
-                    net_init((10) | (0 << 8) | (2 << 16) | (15 << 24));
-                    msleep(500); // Várjunk, amíg a link stabilizálódik a bridge-en
-                }
-            }
-        }
         
-        draw_dock(fb);
-
         uint32_t margin = 20;
         uint32_t dock_h = 55, dock_x = margin, dock_w = fb->framebuffer_width - 2 * margin, dock_y = fb->framebuffer_height - dock_h - margin;
         struct bmp_info_header* icon_bih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
