@@ -995,6 +995,7 @@ void draw_preferences_window(struct multiboot_tag_framebuffer* fb) {
 }
 
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
+    if (preferences_window_open) return;
     uint32_t icon_xs[] = {30, 30};
     uint32_t icon_ys[] = {30, 130};
     const char* labels[] = {"File explorer", "Preferences"};
