@@ -1,4 +1,4 @@
-# AnimOS Operating System Development
+# AnimOS™ Operating System Development
 
 This is the official repository for the AnimOS Operating System.
 
