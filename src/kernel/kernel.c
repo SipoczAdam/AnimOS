@@ -707,9 +707,12 @@ void draw_cursor_simple(int32_t mx, int32_t my, struct multiboot_tag_framebuffer
 void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot_addr) {
     if (!screen_backbuffer) return;
     struct multiboot_tag_framebuffer back_fb = *real_fb; back_fb.framebuffer_addr = (uint64_t)screen_backbuffer; back_fb.framebuffer_pitch = real_fb->framebuffer_width * 4; back_fb.framebuffer_bpp = 32;
-    draw_background(&back_fb); draw_desktop_icons(&back_fb); draw_dock(&back_fb); draw_status_bar(&back_fb);
+    draw_background(&back_fb);
     if (preferences_window_open) {
         draw_preferences_window(&back_fb, preferences_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK); preferences_needs_init = 0;
+    } else {
+        draw_desktop_icons(&back_fb);
+        draw_dock(&back_fb); draw_status_bar(&back_fb);
     }
     if (dialog_state == 1) draw_dialog(&back_fb, "Restart", "Are you sure you want to restart the system?");
     else if (dialog_state == 2) draw_dialog(&back_fb, "Shutdown", "Are you sure you want to shutdown the system?");
