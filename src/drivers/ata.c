@@ -37,6 +37,35 @@ int ata_identify(uint8_t drive) {
     return 0;
 }
 
+uint32_t ata_get_size_gb(uint8_t drive) {
+    outb(0x1F6, (drive == 0) ? 0xA0 : 0xB0);
+    outb(0x1F2, 0);
+    outb(0x1F3, 0);
+    outb(0x1F4, 0);
+    outb(0x1F5, 0);
+    outb(0x1F7, 0xEC);
+
+    uint8_t status = inb(0x1F7);
+    if (status == 0 || status == 0xFF) return 0;
+    if (ata_wait_bsy() != 0) return 0;
+    if (inb(0x1F7) & ATA_STATUS_ERR) return 0;
+    if (ata_wait_drq() != 0) return 0;
+
+    uint16_t data[256];
+    for (int i = 0; i < 256; i++) {
+        data[i] = inw(ATA_PRIMARY_DATA);
+    }
+
+    uint32_t sectors = *((uint32_t*)&data[60]);
+    // Check if LBA48 is supported (word 83, bit 10)
+    if (data[83] & (1 << 10)) {
+        uint64_t lba48_sectors = *((uint64_t*)&data[100]);
+        if (lba48_sectors > 0) return (uint32_t)((lba48_sectors * 512) / (1024 * 1024 * 1024));
+    }
+
+    return (uint32_t)(((uint64_t)sectors * 512) / (1024 * 1024 * 1024));
+}
+
 int ata_read_sectors(uint8_t drive, uint32_t lba, uint8_t count, uint8_t* buffer) {
     if (ata_wait_bsy() != 0) return -1;
     outb(0x1F6, ((drive == 0) ? 0xE0 : 0xF0) | ((lba >> 24) & 0x0F));

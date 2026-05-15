@@ -23,6 +23,11 @@ typedef struct {
     void (*blit_buffer)(uint32_t* src_buffer, struct multiboot_tag_framebuffer* fb);
     void (*get_mouse_pos)(int32_t* mx, int32_t* my, uint8_t* clicked);
     void (*yield)();
+
+    // System Info
+    char cpu_brand[49];
+    uint32_t ram_size_mb;
+    uint32_t disk_size_gb;
 } kernel_api_t;
 
 typedef enum {

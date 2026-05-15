@@ -16,4 +16,8 @@ struct multiboot_tag_framebuffer {
     uint8_t framebuffer_type; uint16_t reserved;
 };
 
+struct multiboot_tag_basic_meminfo {
+    uint32_t type; uint32_t size; uint32_t mem_lower; uint32_t mem_upper;
+};
+
 #endif

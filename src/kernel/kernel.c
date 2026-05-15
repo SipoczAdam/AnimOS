@@ -2,6 +2,7 @@
 #include "io.h"
 #include "../drivers/pci.h"
 #include "../drivers/e1000.h"
+#include "../drivers/ata.h"
 #include "../net/net.h"
 #include "../fs/vfs.h"
 #include "api.h"
@@ -65,11 +66,13 @@ int selected_icon = -1;
 int hover_icon = -1;    
 int preferences_window_open = 0;
 uint32_t last_click_time = 0;
-int last_clicked_icon = -1;
+uint32_t last_clicked_icon = -1;
 int dialog_state = 0; 
 int preferences_needs_init = 0;
+uint32_t global_ram_mb = 0;
 
 volatile int32_t mouse_x = 512, mouse_y = 384;
+
 volatile uint8_t mouse_left_button = 0;
 volatile uint8_t mouse_clicked = 0;
 volatile int power_menu_open = 0;
@@ -181,6 +184,24 @@ int is_qemu() {
     __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0x40000000));
     if (ebx == 0x4b564d4b || ebx == 0x47435447) return 1;
     return 0;
+}
+
+void get_cpu_brand(char* brand) {
+    uint32_t eax, ebx, ecx, edx;
+    for (uint32_t i = 0; i < 3; i++) {
+        __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(0x80000002 + i));
+        ((uint32_t*)brand)[i * 4 + 0] = eax; ((uint32_t*)brand)[i * 4 + 1] = ebx;
+        ((uint32_t*)brand)[i * 4 + 2] = ecx; ((uint32_t*)brand)[i * 4 + 3] = edx;
+    }
+    brand[48] = 0;
+    // Trim leading spaces
+    char* src = brand;
+    while (*src == ' ') src++;
+    if (src != brand) {
+        char* dst = brand;
+        while (*src) *dst++ = *src++;
+        *dst = 0;
+    }
 }
 
 void get_time(uint8_t* h, uint8_t* m) {
@@ -666,6 +687,10 @@ void init_kernel_api() {
     kernel_api.close_icon = close_icon_data; kernel_api.maximize_icon = maximize_icon_data; kernel_api.minimize_icon = minimize_icon_data;
     kernel_api.window_buffer = preferences_window_buffer; kernel_api.draw_rect = draw_rect; kernel_api.blit_buffer = blit_buffer;
     kernel_api.get_mouse_pos = get_mouse_pos; kernel_api.yield = kernel_yield;
+
+    get_cpu_brand(kernel_api.cpu_brand);
+    kernel_api.ram_size_mb = global_ram_mb;
+    kernel_api.disk_size_gb = ata_get_size_gb(0);
 }
 
 static uint8_t* preferences_bin_cache = 0; static uint32_t preferences_bin_size = 0;
@@ -824,7 +849,13 @@ void shutdown(uint64_t multiboot_addr) {
 
 void kernel_main(uint64_t multiboot_addr) {
     struct multiboot_tag_framebuffer* fb = 0; struct multiboot_tag* tag;
-    for (tag = (struct multiboot_tag*)(multiboot_addr + 8); tag->type != 0; tag = (struct multiboot_tag*)((uint8_t*)tag + ((tag->size + 7) & ~7))) if (tag->type == 8) fb = (struct multiboot_tag_framebuffer*)tag;
+    for (tag = (struct multiboot_tag*)(multiboot_addr + 8); tag->type != 0; tag = (struct multiboot_tag*)((uint8_t*)tag + ((tag->size + 7) & ~7))) {
+        if (tag->type == 8) fb = (struct multiboot_tag_framebuffer*)tag;
+        if (tag->type == 4) {
+            struct multiboot_tag_basic_meminfo* meminfo = (struct multiboot_tag_basic_meminfo*)tag;
+            global_ram_mb = (meminfo->mem_upper + 1024) / 1024;
+        }
+    }
     if (fb && fb->framebuffer_addr != 0) {
         global_fb = fb; screen_w = fb->framebuffer_width; screen_h = fb->framebuffer_height; mouse_x = screen_w / 2; mouse_y = screen_h / 2;
         pic_remap(); for (int i = 0; i < 256; i++) idt_set_gate(i, 0, 0, 0);

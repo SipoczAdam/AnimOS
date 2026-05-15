@@ -8,6 +8,14 @@ static uint32_t btn_size = 22;
 // Internal State
 static int selected_menu = 0;
 
+void app_itoa(uint32_t n, char* s) {
+    int i = 0;
+    if (n == 0) { s[i++] = '0'; s[i] = 0; return; }
+    while (n > 0) { s[i++] = (n % 10) + '0'; n /= 10; }
+    s[i] = 0;
+    for (int j = 0; j < i / 2; j++) { char c = s[j]; s[j] = s[i-1-j]; s[i-1-j] = c; }
+}
+
 void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, struct multiboot_tag_framebuffer* target_fb) {
     uint32_t w = fb->framebuffer_width;
     uint32_t h = fb->framebuffer_height;
@@ -52,8 +60,27 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     else if (selected_menu == 1) { // About
         api->draw_string_scaled(cx, cy, "About AnimOS", 0x222222, 90, target_fb);
         api->draw_string_scaled(cx, cy + 50, "Version: 1.0 (Alpha)", 0x555555, 70, target_fb);
-        api->draw_string_scaled(cx, cy + 80, "Kernel: AnimKernel™ v1.0 x86_64 64bit", 0x555555, 70, target_fb);
-        api->draw_string_scaled(cx, cy + 110, "Copyright (C) 2026 Sipocz Adam - All Rights Reserved.", 0x888888, 60, target_fb);
+        api->draw_string_scaled(cx, cy + 80, "Kernel: AnimKernel v1.0 x86_64 64bit", 0x555555, 70, target_fb);
+        
+        // Processor Brand
+        api->draw_string_scaled(cx, cy + 115, "Processor: ", 0x555555, 70, target_fb);
+        api->draw_string_scaled(cx + 80, cy + 115, api->cpu_brand, 0x555555, 70, target_fb);
+
+        // RAM Size
+        char ram_val[16]; app_itoa(api->ram_size_mb, ram_val);
+        api->draw_string_scaled(cx, cy + 145, "Memory:", 0x555555, 70, target_fb);
+        uint32_t ram_val_x = cx + api->get_string_width_scaled("Memory: ", 70);
+        api->draw_string_scaled(ram_val_x, cy + 145, ram_val, 0x333333, 70, target_fb);
+        api->draw_string_scaled(ram_val_x + api->get_string_width_scaled(ram_val, 70) + 5, cy + 145, "MB RAM", 0x555555, 70, target_fb);
+
+        // Disk Size
+        char disk_val[16]; app_itoa(api->disk_size_gb, disk_val);
+        api->draw_string_scaled(cx, cy + 175, "Storage:", 0x555555, 70, target_fb);
+        uint32_t disk_val_x = cx + api->get_string_width_scaled("Storage: ", 70);
+        api->draw_string_scaled(disk_val_x, cy + 175, disk_val, 0x333333, 70, target_fb);
+        api->draw_string_scaled(disk_val_x + api->get_string_width_scaled(disk_val, 70) + 5, cy + 175, "GB Total", 0x555555, 70, target_fb);
+
+        api->draw_string_scaled(cx, cy + 220, "Copyright (C) 2026 Sipocz Adam - All Rights Reserved.", 0x888888, 60, target_fb);
     }
 }
 
