@@ -21,3 +21,6 @@ qemu-system-x86_64 -boot d -cdrom animos.iso -drive file=hdd.img,format=raw -m 1
 
 ## 📬 Contact
 For inquiries or licensing permissions, please contact the author via GitHub.
+
+---
+*AnimOS™ is a trademark of Sipocz Adam. All other trademarks are the property of their respective owners.*
