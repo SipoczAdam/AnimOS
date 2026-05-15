@@ -1,0 +1,65 @@
+#include "../../kernel/api.h"
+
+// Constants
+static uint32_t title_bar_h = 40;
+static uint32_t sidebar_w = 200;
+static uint32_t btn_size = 22;
+
+void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, struct multiboot_tag_framebuffer* target_fb) {
+    uint32_t w = fb->framebuffer_width;
+    uint32_t h = fb->framebuffer_height;
+
+    // 1. Draw the window background and layout to the target buffer
+    api->draw_rect(0, 0, w, title_bar_h, 0xF0F0F0, target_fb); // Title bar
+    api->draw_rect(0, title_bar_h, sidebar_w, h - title_bar_h, 0xF9F9F9, target_fb); // Sidebar
+    api->draw_rect(sidebar_w, title_bar_h, w - sidebar_w, h - title_bar_h, 0xFFFFFF, target_fb); // Main area
+
+    // 2. Draw separators
+    api->draw_rect(0, title_bar_h, w, 1, 0xDDDDDD, target_fb); // Horizontal line
+    api->draw_rect(sidebar_w, title_bar_h, 1, h - title_bar_h, 0xDDDDDD, target_fb); // Vertical line
+
+    // 3. Draw Title
+    api->draw_string_scaled(20, (title_bar_h - (18 * 80 / 100)) / 2, "Preferences", 0x333333, 80, target_fb);
+
+    // 4. Draw Window Buttons
+    uint32_t btn_y = (title_bar_h - btn_size) / 2;
+    uint32_t close_x = w - btn_size - 12;
+    uint32_t max_x = close_x - btn_size - 8;
+    uint32_t min_x = max_x - btn_size - 8;
+
+    if (api->close_icon) api->draw_icon_scaled(close_x, btn_y, btn_size, btn_size, api->close_icon, target_fb);
+    if (api->maximize_icon) api->draw_icon_scaled(max_x, btn_y, btn_size, btn_size, api->maximize_icon, target_fb);
+    if (api->minimize_icon) api->draw_icon_scaled(min_x, btn_y, btn_size, btn_size, api->minimize_icon, target_fb);
+
+    // 5. Draw Sidebar Menu Items
+    const char* menu_items[] = {"Display", "Network", "Users", "About"};
+    for (int i = 0; i < 4; i++) {
+        uint32_t item_y = title_bar_h + 20 + (i * 40);
+        // Highlight the first item as selected (Display)
+        if (i == 0) {
+            api->draw_rect(10, item_y - 10, sidebar_w - 20, 35, 0xEEEEEE, target_fb);
+        }
+        api->draw_string_scaled(30, item_y, menu_items[i], 0x333333, 70, target_fb);
+    }
+}
+
+// Force main to the very beginning of the binary
+__attribute__((section(".text.main")))
+void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t event) {
+    if (event == APP_EVENT_INIT || event == APP_EVENT_TICK) {
+        // Use double buffering: render to offscreen window_buffer first
+        struct multiboot_tag_framebuffer buffer_fb = *fb;
+        buffer_fb.framebuffer_addr = (uint64_t)api->window_buffer;
+        buffer_fb.framebuffer_pitch = fb->framebuffer_width * 4; // Assuming 32-bit for the buffer
+        buffer_fb.framebuffer_bpp = 32;
+
+        render_to_buffer(api, fb, &buffer_fb);
+
+        // Atomic copy to the real screen
+        api->blit_buffer(api->window_buffer, fb);
+
+        if (event == APP_EVENT_TICK) {
+            api->yield();
+        }
+    }
+}

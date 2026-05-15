@@ -18,7 +18,9 @@ all: prep compile link iso hdd.img
 # Folders
 prep:
 	mkdir -p $(BUILDDIR)
+	mkdir -p $(BUILDDIR)/apps
 	mkdir -p isodir/boot/grub/themes/grub-theme
+	mkdir -p sysroot/AnimOS/apps
 
 # Compiler
 compile:
@@ -30,6 +32,9 @@ compile:
 	$(CC) $(CFLAGS) -c $(SRCDIR)/fs/fat32.c -o $(BUILDDIR)/fat32.o
 	$(CC) $(CFLAGS) -c $(SRCDIR)/fs/vfs.c -o $(BUILDDIR)/vfs.o
 	$(CC) $(CFLAGS) -c $(SRCDIR)/net/net.c -o $(BUILDDIR)/net.o
+	# Build Applications
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -c $(SRCDIR)/applications/preferences/main.c -o $(BUILDDIR)/apps/preferences.o
+	$(LD) -m elf_x86_64 -T $(SRCDIR)/applications/linker.ld --oformat binary -o sysroot/AnimOS/apps/preferences.bin $(BUILDDIR)/apps/preferences.o
 
 # Linker
 link:
