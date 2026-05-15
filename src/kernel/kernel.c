@@ -877,15 +877,17 @@ void kernel_main(uint64_t multiboot_addr) {
             if (mouse_clicked) {
                 mouse_clicked = 0;
                 if (dialog_state != 0) {
-                    uint32_t dw = get_string_width((dialog_state == 1) ? "Are you sure you want to restart the system?" : "Are you sure you want to shutdown the system?") + 80; if (dw < 350) dw = 350;
-                    uint32_t dh = 220, dx = (fb->framebuffer_width - dw) / 2, dy = (fb->framebuffer_height - dh) / 2, start_btn_x = dx + (dw - (2 * 120 + 20)) / 2, btn_y = dy + 145;
-                    if (mx >= (int32_t)start_btn_x && mx <= (int32_t)(start_btn_x + 120) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + 45)) {
+                    const char* dmsg = (dialog_state == 1) ? "Are you sure you want to restart the system?" : "Are you sure you want to shutdown the system?";
+                    uint32_t dw = get_string_width(dmsg) + 80; if (dw < 350) dw = 350;
+                    uint32_t dh = 220, dx = (fb->framebuffer_width - dw) / 2, dy = (fb->framebuffer_height - dh) / 2;
+                    uint32_t b_w = 120, b_h = 45, sp = 20, s_x = dx + (dw - (2 * b_w + sp)) / 2, b_y = dy + 145;
+
+                    if (mx >= (int32_t)s_x && mx <= (int32_t)(s_x + b_w) && my >= (int32_t)b_y && my <= (int32_t)(b_y + b_h)) {
                         for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
                         if (dialog_state == 1) {
-                            const char* msg = "Restarting...";
-                            draw_string((screen_w - get_string_width(msg)) / 2, screen_h / 2, msg, 0xFFFFFF, fb);
-                            msleep(500);
-                            reboot();
+                            const char* m = "Restarting...";
+                            draw_string((screen_w - get_string_width(m)) / 2, screen_h / 2, m, 0xFFFFFF, fb);
+                            msleep(500); reboot();
                         } else {
                             const char* m1 = "Logging off...";
                             draw_string((screen_w - get_string_width(m1)) / 2, screen_h / 2, m1, 0xFFFFFF, fb);
@@ -897,20 +899,17 @@ void kernel_main(uint64_t multiboot_addr) {
                             for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
                             const char* m3 = "AnimOS is shutting down...";
                             draw_string((screen_w - get_string_width(m3)) / 2, screen_h / 2, m3, 0xFFFFFF, fb);
-                            msleep(800);
-                            shutdown(multiboot_addr);
+                            msleep(800); shutdown(multiboot_addr);
                             for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
                             const char* m4 = "It is now safe to turn off your computer.";
                             draw_string((screen_w - get_string_width(m4)) / 2, screen_h / 2, m4, 0xFFFFFF, fb);
                         }
                         while(1) __asm__ volatile("hlt");
-                    }
- else if (mx >= (int32_t)(start_btn_x + 140) && mx <= (int32_t)(start_btn_x + 260) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + 45)) dialog_state = 0;
+                    } else if (mx >= (int32_t)(s_x + b_w + sp) && mx <= (int32_t)(s_x + 2 * b_w + sp) && my >= (int32_t)b_y && my <= (int32_t)(b_y + b_h)) dialog_state = 0;
                 } else if (preferences_window_open) {
-                    // Preferences is now full screen, so close logic depends on its internal close button position
-                    // Usually it's at the top right: screen_w - 22 - 12
                     uint32_t close_x = screen_w - 22 - 12, close_y = (40 - 22) / 2;
                     if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + 22) && my >= (int32_t)close_y && my <= (int32_t)(close_y + 22)) preferences_window_open = 0;
+                    else draw_preferences_window(fb, APP_EVENT_CLICK);
                 } else {
                     if (hover_icon != -1) {
                         if (hover_icon == 1 && last_clicked_icon == 1 && (ticks - last_click_time) < 50) { preferences_window_open = 1; preferences_needs_init = 1; }
