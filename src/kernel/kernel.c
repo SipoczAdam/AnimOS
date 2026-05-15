@@ -1000,6 +1000,7 @@ void draw_preferences_window(struct multiboot_tag_framebuffer* fb) {
     uint32_t y = 0;
     uint32_t radius = 0;
     uint32_t title_bar_h = 40;
+    uint32_t sidebar_w = 200;
 
     // Create a temporary framebuffer for the window
     struct multiboot_tag_framebuffer temp_fb = *fb;
@@ -1028,6 +1029,8 @@ void draw_preferences_window(struct multiboot_tag_framebuffer* fb) {
                 uint32_t color = 0xFFFFFF;
                 if (iy < title_bar_h) {
                     color = 0xF0F0F0;
+                } else if (ix < sidebar_w) {
+                    color = 0xF9F9F9; // Sidebar background
                 }
                 final_color = blend_colors(get_wallpaper_pixel_fast(x + ix, y + iy, fb), color, alpha);
             } else {
@@ -1041,6 +1044,16 @@ void draw_preferences_window(struct multiboot_tag_framebuffer* fb) {
                 p[0] = final_color & 0xFF; p[1] = (final_color >> 8) & 0xFF; p[2] = (final_color >> 16) & 0xFF;
             }
         }
+    }
+
+    // Horizontal separator line under title bar
+    for(uint32_t ix = 0; ix < w; ix++) {
+        draw_pixel(ix, title_bar_h, 0xDDDDDD, &temp_fb);
+    }
+
+    // Vertical separator line for sidebar
+    for(uint32_t iy = title_bar_h; iy < h; iy++) {
+        draw_pixel(sidebar_w, iy, 0xDDDDDD, &temp_fb);
     }
 
     // Title bar text and icons on the buffer
@@ -1058,8 +1071,20 @@ void draw_preferences_window(struct multiboot_tag_framebuffer* fb) {
     if (maximize_icon_data) draw_icon_scaled(max_x, btn_y, btn_size, btn_size, maximize_icon_data, &temp_fb);
     if (minimize_icon_data) draw_icon_scaled(min_x, btn_y, btn_size, btn_size, minimize_icon_data, &temp_fb);
 
-    for(uint32_t ix = 0; ix < w; ix++) {
-        draw_pixel(ix, title_bar_h, 0xDDDDDD, &temp_fb);
+    // Sidebar menu items
+    const char* menu_items[] = {"Wallpaper", "Network", "About"};
+    int menu_scale = 70;
+    for (int i = 0; i < 3; i++) {
+        uint32_t item_y = title_bar_h + 20 + (i * 40);
+        // Highlight the first item as selected
+        if (i == 0) {
+            for (uint32_t sy = item_y - 10; sy < item_y + 25; sy++) {
+                for (uint32_t sx = 10; sx < sidebar_w - 10; sx++) {
+                    draw_pixel(sx, sy, 0xEEEEEE, &temp_fb);
+                }
+            }
+        }
+        draw_string_scaled(30, item_y, menu_items[i], 0x333333, menu_scale, &temp_fb);
     }
 
     // 2. Atomic copy to the real framebuffer
