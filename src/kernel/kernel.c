@@ -576,7 +576,7 @@ void draw_status_bar(struct multiboot_tag_framebuffer* fb) {
 }
 
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
-    if (preferences_window_open) return;
+    if (preferences_window_open && kernel_api.window_maximized) return;
     uint32_t icon_xs[] = {30, 30}, icon_ys[] = {30, 130}; const char* labels[] = {"File explorer", "Preferences"}; uint8_t* icon_datas[] = {file_explorer_icon_data, preferences_icon_data};
     for (int i = 0; i < 2; i++) {
         if (!icon_datas[i]) continue;
@@ -666,7 +666,14 @@ void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const 
 
 /* --- Window and App Management --- */
 
-void get_mouse_pos(int32_t* mx, int32_t* my, uint8_t* clicked) { *mx = mouse_x; *my = mouse_y; *clicked = mouse_clicked; if (mouse_clicked) mouse_clicked = 0; }
+void get_mouse_pos(int32_t* mx, int32_t* my, uint8_t* clicked) { 
+    *mx = mouse_x; *my = mouse_y; *clicked = mouse_clicked; if (mouse_clicked) mouse_clicked = 0; 
+    if (!kernel_api.window_maximized && preferences_window_open) {
+        uint32_t win_w = 800, win_h = 600;
+        *mx -= (screen_w - win_w) / 2;
+        *my -= (screen_h - win_h) / 2;
+    }
+}
 
 void ntp_sync(uint32_t server_ip); void net_poll();
 static uint32_t ntp_retry_timer = 0; static uint32_t link_stable_count = 0;
@@ -692,6 +699,7 @@ void init_kernel_api() {
     kernel_api.ram_size_mb = global_ram_mb;
     kernel_api.disk_size_gb = ata_get_size_gb(0);
     kernel_api.disk_size_mb = ata_get_size_mb(0);
+    kernel_api.window_maximized = 1;
 }
 
 static uint8_t* preferences_bin_cache = 0; static uint32_t preferences_bin_size = 0;
@@ -711,7 +719,19 @@ void run_app(const char* path, struct multiboot_tag_framebuffer* fb, app_event_t
     app_entry_t entry = (app_entry_t)app_memory; entry(&kernel_api, fb, event);
 }
 
-void draw_preferences_window(struct multiboot_tag_framebuffer* fb, app_event_t event) { run_app("Sysroot:/AnimOS/apps/preferences.bin", fb, event); }
+void draw_preferences_window(struct multiboot_tag_framebuffer* fb, app_event_t event) { 
+    if (kernel_api.window_maximized) {
+        run_app("Sysroot:/AnimOS/apps/preferences.bin", fb, event);
+    } else {
+        uint32_t win_w = 800, win_h = 600;
+        uint32_t win_x = (fb->framebuffer_width - win_w) / 2, win_y = (fb->framebuffer_height - win_h) / 2;
+        
+        struct multiboot_tag_framebuffer vfb = *fb;
+        vfb.framebuffer_width = win_w; vfb.framebuffer_height = win_h;
+        vfb.framebuffer_addr += win_y * fb->framebuffer_pitch + win_x * (fb->framebuffer_bpp / 8);
+        run_app("Sysroot:/AnimOS/apps/preferences.bin", &vfb, event);
+    }
+}
 
 /* --- Cursor Handling --- */
 
@@ -734,12 +754,18 @@ void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot
     if (!screen_backbuffer) return;
     struct multiboot_tag_framebuffer back_fb = *real_fb; back_fb.framebuffer_addr = (uint64_t)screen_backbuffer; back_fb.framebuffer_pitch = real_fb->framebuffer_width * 4; back_fb.framebuffer_bpp = 32;
     draw_background(&back_fb);
-    if (preferences_window_open) {
-        draw_preferences_window(&back_fb, preferences_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK); preferences_needs_init = 0;
-    } else {
+    
+    int show_desktop = !preferences_window_open || !kernel_api.window_maximized;
+    
+    if (show_desktop) {
         draw_desktop_icons(&back_fb);
         draw_dock(&back_fb); draw_status_bar(&back_fb);
     }
+    
+    if (preferences_window_open) {
+        draw_preferences_window(&back_fb, preferences_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK); preferences_needs_init = 0;
+    }
+    
     if (dialog_state == 1) draw_dialog(&back_fb, "Restart", "Are you sure you want to restart the system?");
     else if (dialog_state == 2) draw_dialog(&back_fb, "Shutdown", "Are you sure you want to shutdown the system?");
     if (power_menu_progress > 0) draw_power_menu(&back_fb, power_menu_progress);
@@ -940,6 +966,11 @@ void kernel_main(uint64_t multiboot_addr) {
                     } else if (mx >= (int32_t)(s_x + b_w + sp) && mx <= (int32_t)(s_x + 2 * b_w + sp) && my >= (int32_t)b_y && my <= (int32_t)(b_y + b_h)) dialog_state = 0;
                 } else if (preferences_window_open) {
                     uint32_t close_x = screen_w - 22 - 12, close_y = (40 - 22) / 2;
+                    if (!kernel_api.window_maximized) {
+                        uint32_t win_w = 800, win_h = 600;
+                        close_x = (screen_w + win_w) / 2 - 22 - 12;
+                        close_y = (screen_h - win_h) / 2 + (40 - 22) / 2;
+                    }
                     if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + 22) && my >= (int32_t)close_y && my <= (int32_t)(close_y + 22)) preferences_window_open = 0;
                     else draw_preferences_window(fb, APP_EVENT_CLICK);
                 } else {

@@ -32,10 +32,13 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     // 3. Draw Title
     api->draw_string_scaled(20, (title_bar_h - (18 * 80 / 100)) / 2, "Preferences", 0x333333, 80, target_fb);
 
-    // 4. Window Buttons (Close only for now)
+    // 4. Window Buttons
     uint32_t btn_y = (title_bar_h - btn_size) / 2;
     uint32_t close_x = w - btn_size - 12;
     if (api->close_icon) api->draw_icon_scaled(close_x, btn_y, btn_size, btn_size, api->close_icon, target_fb);
+
+    uint32_t max_x = close_x - btn_size - 8;
+    if (api->maximize_icon) api->draw_icon_scaled(max_x, btn_y, btn_size, btn_size, api->maximize_icon, target_fb);
 
     // 5. Sidebar Menu Items
     const char* menu_items[] = {"Display", "About"};
@@ -102,6 +105,16 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         int32_t mx, my; uint8_t clicked;
         api->get_mouse_pos(&mx, &my, &clicked);
         
+        // Maximize button hit test
+        uint32_t btn_y = (title_bar_h - btn_size) / 2;
+        uint32_t close_x = fb->framebuffer_width - btn_size - 12;
+        uint32_t max_x = close_x - btn_size - 8;
+        
+        if (mx >= (int32_t)max_x && mx <= (int32_t)(max_x + btn_size) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + btn_size)) {
+            api->window_maximized = !api->window_maximized;
+            return;
+        }
+
         // Sidebar area hit test
         if (mx >= 0 && mx <= (int32_t)sidebar_w && my >= (int32_t)title_bar_h) {
             for (int i = 0; i < 4; i++) {
