@@ -66,7 +66,7 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     } 
     else if (selected_menu == 1) { // About
         api->draw_string_scaled(cx, cy, "About AnimOS", 0x222222, 90, target_fb);
-        api->draw_string_scaled(cx, cy + 50, "Version: 1.0 (Alpha)", 0x555555, 70, target_fb);
+        api->draw_string_scaled(cx, cy + 50, "Version: AnimOS Experience 1.0 (Alpha)", 0x555555, 70, target_fb);
         api->draw_string_scaled(cx, cy + 80, "Kernel: AnimKernel v1.0 x86_64 64bit", 0x555555, 70, target_fb);
         
         // Processor Brand
@@ -74,11 +74,18 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         api->draw_string_scaled(cx + 80, cy + 115, api->cpu_brand, 0x555555, 70, target_fb);
 
         // RAM Size
-        char ram_val[16]; app_itoa(api->ram_size_mb, ram_val);
+        char ram_val[16];
         api->draw_string_scaled(cx, cy + 145, "Memory:", 0x555555, 70, target_fb);
         uint32_t ram_val_x = cx + api->get_string_width_scaled("Memory: ", 70);
-        api->draw_string_scaled(ram_val_x, cy + 145, ram_val, 0x333333, 70, target_fb);
-        api->draw_string_scaled(ram_val_x + api->get_string_width_scaled(ram_val, 70) + 5, cy + 145, "MB RAM", 0x555555, 70, target_fb);
+        if (api->ram_size_mb >= 1024) {
+            app_itoa((api->ram_size_mb + 512) / 1024, ram_val);
+            api->draw_string_scaled(ram_val_x, cy + 145, ram_val, 0x333333, 70, target_fb);
+            api->draw_string_scaled(ram_val_x + api->get_string_width_scaled(ram_val, 70) + 5, cy + 145, "GB Total", 0x555555, 70, target_fb);
+        } else {
+            app_itoa(api->ram_size_mb, ram_val);
+            api->draw_string_scaled(ram_val_x, cy + 145, ram_val, 0x333333, 70, target_fb);
+            api->draw_string_scaled(ram_val_x + api->get_string_width_scaled(ram_val, 70) + 5, cy + 145, "MB Total", 0x555555, 70, target_fb);
+        }
 
         // Disk Size
         char disk_val[16];
