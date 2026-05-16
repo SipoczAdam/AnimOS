@@ -691,6 +691,7 @@ void init_kernel_api() {
     get_cpu_brand(kernel_api.cpu_brand);
     kernel_api.ram_size_mb = global_ram_mb;
     kernel_api.disk_size_gb = ata_get_size_gb(0);
+    kernel_api.disk_size_mb = ata_get_size_mb(0);
 }
 
 static uint8_t* preferences_bin_cache = 0; static uint32_t preferences_bin_size = 0;

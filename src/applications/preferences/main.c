@@ -74,11 +74,18 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         api->draw_string_scaled(ram_val_x + api->get_string_width_scaled(ram_val, 70) + 5, cy + 145, "MB RAM", 0x555555, 70, target_fb);
 
         // Disk Size
-        char disk_val[16]; app_itoa(api->disk_size_gb, disk_val);
+        char disk_val[16];
         api->draw_string_scaled(cx, cy + 175, "Storage:", 0x555555, 70, target_fb);
         uint32_t disk_val_x = cx + api->get_string_width_scaled("Storage: ", 70);
-        api->draw_string_scaled(disk_val_x, cy + 175, disk_val, 0x333333, 70, target_fb);
-        api->draw_string_scaled(disk_val_x + api->get_string_width_scaled(disk_val, 70) + 5, cy + 175, "GB Total", 0x555555, 70, target_fb);
+        if (api->disk_size_gb > 0) {
+            app_itoa(api->disk_size_gb, disk_val);
+            api->draw_string_scaled(disk_val_x, cy + 175, disk_val, 0x333333, 70, target_fb);
+            api->draw_string_scaled(disk_val_x + api->get_string_width_scaled(disk_val, 70) + 5, cy + 175, "GB Total", 0x555555, 70, target_fb);
+        } else {
+            app_itoa(api->disk_size_mb, disk_val);
+            api->draw_string_scaled(disk_val_x, cy + 175, disk_val, 0x333333, 70, target_fb);
+            api->draw_string_scaled(disk_val_x + api->get_string_width_scaled(disk_val, 70) + 5, cy + 175, "MB Total", 0x555555, 70, target_fb);
+        }
 
         api->draw_string_scaled(cx, cy + 220, "Copyright (C) 2026 Sipocz Adam - All Rights Reserved.", 0x888888, 60, target_fb);
     }
