@@ -16,7 +16,7 @@ docker run --rm -v .:/osdev animos-builder make clean all
 
 To run the system in QEMU:
 ```bash
-qemu-system-x86_64 -boot d -cdrom animos.iso -drive file=hdd.img,format=raw -m 1G -net nic,model=e1000 -net user
+qemu-system-x86_64 -boot d -cdrom animos.iso -drive file=hdd.img,format=raw -m 2G -net nic,model=e1000 -net user
 ```
 
 ## 📬 Contact
