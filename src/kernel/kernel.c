@@ -618,7 +618,13 @@ void draw_power_menu(struct multiboot_tag_framebuffer* fb, int progress) {
     uint32_t margin = 20, dock_h = 55, dock_x = margin, dock_y = fb->framebuffer_height - dock_h - margin;
     uint32_t menu_w = 200, menu_h = 120, menu_x = dock_x, radius = 15;
     int32_t target_y = dock_y - menu_h - 10, start_y = dock_y, current_y = start_y + (target_y - start_y) * progress / 100, area_y = target_y, area_h = start_y - target_y;
-    for (int32_t y = 0; y < area_h; y++) for (int32_t x = 0; x < (int32_t)menu_w; x++) menu_area_buffer[y * menu_w + x] = get_wallpaper_pixel_fast(menu_x + x, area_y + y, fb);
+    for (int32_t y = 0; y < area_h; y++) {
+        for (int32_t x = 0; x < (int32_t)menu_w; x++) {
+            uint32_t sx = menu_x + x, sy = area_y + y;
+            if (screen_backbuffer && sx < screen_w && sy < screen_h) menu_area_buffer[y * menu_w + x] = screen_backbuffer[sy * screen_w + sx];
+            else menu_area_buffer[y * menu_w + x] = get_wallpaper_pixel_fast(sx, sy, fb);
+        }
+    }
     if (progress > 0) {
         int32_t menu_rel_y = current_y - area_y;
         for (int32_t y = 0; y < (int32_t)menu_h; y++) {
@@ -653,7 +659,10 @@ void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const 
             else if (ix < x + radius && iy > y + h - radius) { dx = (x + radius) - ix; dy = iy - (y + h - radius); is_corner = 1; }
             else if (ix > x + w - radius && iy > y + h - radius) { dx = ix - (x + w - radius); dy = iy - (y + h - radius); is_corner = 1; }
             if (is_corner && dx*dx + dy*dy >= radius * radius) alpha = 0;
-            if (alpha > 0) draw_pixel(ix, iy, blend_colors(get_wallpaper_pixel_fast(ix, iy, fb), 0xFFFFFF, alpha), fb);
+            if (alpha > 0) {
+                uint32_t bg = (screen_backbuffer && ix < screen_w && iy < screen_h) ? screen_backbuffer[iy * screen_w + ix] : get_wallpaper_pixel_fast(ix, iy, fb);
+                draw_pixel(ix, iy, blend_colors(bg, 0xFFFFFF, alpha), fb);
+            }
         }
     }
     draw_string(x + 25, y + 25, title, 0x222222, fb); for(uint32_t ix = x + 10; ix < x + w - 10; ix++) draw_pixel(ix, y + 65, 0xBBBBBB, fb);
@@ -766,9 +775,10 @@ void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot
         draw_preferences_window(&back_fb, preferences_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK); preferences_needs_init = 0;
     }
     
+    if (power_menu_progress > 0) draw_power_menu(&back_fb, power_menu_progress);
     if (dialog_state == 1) draw_dialog(&back_fb, "Restart", "Are you sure you want to restart the system?");
     else if (dialog_state == 2) draw_dialog(&back_fb, "Shutdown", "Are you sure you want to shutdown the system?");
-    if (power_menu_progress > 0) draw_power_menu(&back_fb, power_menu_progress);
+    
     draw_cursor_simple(mouse_x, mouse_y, &back_fb); blit_buffer(screen_backbuffer, real_fb);
 }
 
@@ -802,7 +812,11 @@ extern void idt_load(struct idt_ptr* ptr); extern void isr_mouse_stub(void); ext
 
 void keyboard_handler_main() {
     uint8_t scancode = inb(0x60);
-    if (scancode == 0x5B || scancode == 0x5C) if (!preferences_window_open) power_menu_open = !power_menu_open;
+    if (scancode == 0x5B || scancode == 0x5C) {
+        if (!preferences_window_open || !kernel_api.window_maximized) {
+            power_menu_open = !power_menu_open;
+        }
+    }
     outb(0x20, 0x20);
 }
 
@@ -934,7 +948,20 @@ void kernel_main(uint64_t multiboot_addr) {
             hover_icon = -1; if (!preferences_window_open && !dialog_state) { if (mx >= 20 && mx <= 120 && my >= 20 && my <= 100) hover_icon = 0; else if (mx >= 20 && mx <= 120 && my >= 120 && my <= 200) hover_icon = 1; }
             if (mouse_clicked) {
                 mouse_clicked = 0;
-                if (dialog_state != 0) {
+                
+                // 1. Global Power Icon Check
+                if (mx >= picon_x && mx <= picon_x + picon_w && my >= picon_y && my <= picon_y + picon_h) {
+                    power_menu_open = !power_menu_open;
+                } 
+                // 2. Power Menu Items (if open)
+                else if (power_menu_open && (mx >= 20 && mx <= 220 && my >= (int32_t)((fb->framebuffer_height - 55 - 20) - 120 - 10) && my <= (int32_t)((fb->framebuffer_height - 55 - 20) - 10))) {
+                    uint32_t menu_x = 20, menu_y = (fb->framebuffer_height - 55 - 20) - 120 - 10;
+                    if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + 200) && my >= (int32_t)(menu_y + 10) && my <= (int32_t)(menu_y + 60)) { dialog_state = 1; power_menu_open = 0; power_menu_progress = 0; }
+                    else if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + 200) && my >= (int32_t)(menu_y + 70) && my <= (int32_t)(menu_y + 120)) { dialog_state = 2; power_menu_open = 0; power_menu_progress = 0; }
+                    else power_menu_open = 0;
+                } 
+                // 3. Dialog Buttons (if active)
+                else if (dialog_state != 0) {
                     const char* dmsg = (dialog_state == 1) ? "Are you sure you want to restart the system?" : "Are you sure you want to shutdown the system?";
                     uint32_t dw = get_string_width(dmsg) + 80; if (dw < 350) dw = 350;
                     uint32_t dh = 220, dx = (fb->framebuffer_width - dw) / 2, dy = (fb->framebuffer_height - dh) / 2;
@@ -943,28 +970,23 @@ void kernel_main(uint64_t multiboot_addr) {
                     if (mx >= (int32_t)s_x && mx <= (int32_t)(s_x + b_w) && my >= (int32_t)b_y && my <= (int32_t)(b_y + b_h)) {
                         for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
                         if (dialog_state == 1) {
-                            const char* m = "Restarting...";
-                            draw_string((screen_w - get_string_width(m)) / 2, screen_h / 2, m, 0xFFFFFF, fb);
+                            const char* m = "Restarting..."; draw_string((screen_w - get_string_width(m)) / 2, screen_h / 2, m, 0xFFFFFF, fb);
                             msleep(500); reboot();
                         } else {
-                            const char* m1 = "Logging off...";
-                            draw_string((screen_w - get_string_width(m1)) / 2, screen_h / 2, m1, 0xFFFFFF, fb);
-                            msleep(800);
-                            for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
-                            const char* m2 = "Saving your settings...";
-                            draw_string((screen_w - get_string_width(m2)) / 2, screen_h / 2, m2, 0xFFFFFF, fb);
-                            msleep(800);
-                            for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
-                            const char* m3 = "AnimOS is shutting down...";
-                            draw_string((screen_w - get_string_width(m3)) / 2, screen_h / 2, m3, 0xFFFFFF, fb);
+                            const char* m1 = "Logging off..."; draw_string((screen_w - get_string_width(m1)) / 2, screen_h / 2, m1, 0xFFFFFF, fb);
+                            msleep(800); for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
+                            const char* m2 = "Saving your settings..."; draw_string((screen_w - get_string_width(m2)) / 2, screen_h / 2, m2, 0xFFFFFF, fb);
+                            msleep(800); for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
+                            const char* m3 = "AnimOS is shutting down..."; draw_string((screen_w - get_string_width(m3)) / 2, screen_h / 2, m3, 0xFFFFFF, fb);
                             msleep(800); shutdown(multiboot_addr);
                             for(uint32_t y = 0; y < fb->framebuffer_height; y++) for(uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
-                            const char* m4 = "It is now safe to turn off your computer.";
-                            draw_string((screen_w - get_string_width(m4)) / 2, screen_h / 2, m4, 0xFFFFFF, fb);
+                            const char* m4 = "It is now safe to turn off your computer."; draw_string((screen_w - get_string_width(m4)) / 2, screen_h / 2, m4, 0xFFFFFF, fb);
                         }
                         while(1) __asm__ volatile("hlt");
                     } else if (mx >= (int32_t)(s_x + b_w + sp) && mx <= (int32_t)(s_x + 2 * b_w + sp) && my >= (int32_t)b_y && my <= (int32_t)(b_y + b_h)) dialog_state = 0;
-                } else if (preferences_window_open) {
+                } 
+                // 4. Preferences Window (if open)
+                else if (preferences_window_open) {
                     uint32_t close_x = screen_w - 22 - 12, close_y = (40 - 22) / 2;
                     if (!kernel_api.window_maximized) {
                         uint32_t win_w = 800, win_h = 600;
@@ -973,18 +995,13 @@ void kernel_main(uint64_t multiboot_addr) {
                     }
                     if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + 22) && my >= (int32_t)close_y && my <= (int32_t)(close_y + 22)) preferences_window_open = 0;
                     else draw_preferences_window(fb, APP_EVENT_CLICK);
-                } else {
+                } 
+                // 5. Desktop Icons
+                else {
                     if (hover_icon != -1) {
                         if (hover_icon == 1 && last_clicked_icon == 1 && (ticks - last_click_time) < 50) { preferences_window_open = 1; preferences_needs_init = 1; }
                         selected_icon = hover_icon; last_clicked_icon = hover_icon; last_click_time = ticks;
                     } else if (my < (int32_t)(fb->framebuffer_height - 55 - 20)) selected_icon = -1;
-                    if (mx >= picon_x && mx <= picon_x + picon_w && my >= picon_y && my <= picon_y + picon_h) power_menu_open = !power_menu_open;
-                    else if (power_menu_open) {
-                        uint32_t menu_x = 20, menu_y = (fb->framebuffer_height - 55 - 20) - 120 - 10;
-                        if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + 200) && my >= (int32_t)(menu_y + 10) && my <= (int32_t)(menu_y + 60)) { dialog_state = 1; power_menu_open = 0; power_menu_progress = 0; }
-                        else if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + 200) && my >= (int32_t)(menu_y + 70) && my <= (int32_t)(menu_y + 120)) { dialog_state = 2; power_menu_open = 0; power_menu_progress = 0; }
-                        else if (!(mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + 200) && my >= (int32_t)menu_y && my <= (int32_t)(menu_y + 120))) power_menu_open = 0;
-                    }
                 }
             }
             if (power_menu_open && power_menu_progress < 100) power_menu_progress += 20; else if (!power_menu_open && power_menu_progress > 0) power_menu_progress -= 20;
