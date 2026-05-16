@@ -33,12 +33,16 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     api->draw_string_scaled(20, (title_bar_h - (18 * 80 / 100)) / 2, "Preferences", 0x333333, 80, target_fb);
 
     // 4. Window Buttons
-    uint32_t btn_y = (title_bar_h - btn_size) / 2;
-    uint32_t close_x = w - btn_size - 12;
-    if (api->close_icon) api->draw_icon_scaled(close_x, btn_y, btn_size, btn_size, api->close_icon, target_fb);
+    uint32_t close_size = 22;
+    uint32_t max_size = 24;
 
-    uint32_t max_x = close_x - btn_size - 8;
-    if (api->maximize_icon) api->draw_icon_scaled(max_x, btn_y, btn_size, btn_size, api->maximize_icon, target_fb);
+    uint32_t close_y = (title_bar_h - close_size) / 2;
+    uint32_t close_x = w - close_size - 12;
+    if (api->close_icon) api->draw_icon_scaled(close_x, close_y, close_size, close_size, api->close_icon, target_fb);
+
+    uint32_t max_y = (title_bar_h - max_size) / 2;
+    uint32_t max_x = close_x - max_size - 8;
+    if (api->maximize_icon) api->draw_icon_scaled(max_x, max_y, max_size, max_size, api->maximize_icon, target_fb);
 
     // 5. Sidebar Menu Items
     const char* menu_items[] = {"Display", "About"};
@@ -105,12 +109,15 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         int32_t mx, my; uint8_t clicked;
         api->get_mouse_pos(&mx, &my, &clicked);
         
-        // Maximize button hit test
-        uint32_t btn_y = (title_bar_h - btn_size) / 2;
-        uint32_t close_x = fb->framebuffer_width - btn_size - 12;
-        uint32_t max_x = close_x - btn_size - 8;
+        // Window Buttons Hit Test
+        uint32_t close_size = 22;
+        uint32_t max_size = 24;
         
-        if (mx >= (int32_t)max_x && mx <= (int32_t)(max_x + btn_size) && my >= (int32_t)btn_y && my <= (int32_t)(btn_y + btn_size)) {
+        uint32_t close_x = fb->framebuffer_width - close_size - 12;
+        uint32_t max_x = close_x - max_size - 8;
+        uint32_t max_y = (title_bar_h - max_size) / 2;
+        
+        if (mx >= (int32_t)max_x && mx <= (int32_t)(max_x + max_size) && my >= (int32_t)max_y && my <= (int32_t)(max_y + max_size)) {
             api->window_maximized = !api->window_maximized;
             return;
         }
