@@ -19,6 +19,12 @@ To run the system in QEMU:
 qemu-system-x86_64 -boot d -cdrom animos.iso -drive file=hdd.img,format=raw -m 2G -net nic,model=e1000 -net user
 ```
 
+To run the system in Virtualbox, you need to convert hdd.img to hdd.vdi:
+```bash
+start vdi_convert.bat
+```
+⚠️ Virtualbox have to be added to PATH!
+
 ## 📬 Contact
 For inquiries or licensing permissions, please contact the author via GitHub.
 
