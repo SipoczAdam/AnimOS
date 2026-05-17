@@ -706,8 +706,10 @@ void init_kernel_api() {
 
     get_cpu_brand(kernel_api.cpu_brand);
     kernel_api.ram_size_mb = global_ram_mb;
-    kernel_api.disk_size_gb = ata_get_size_gb(0);
-    kernel_api.disk_size_mb = ata_get_size_mb(0);
+    
+    uint8_t boot_drive = vfs_get_boot_drive();
+    kernel_api.disk_size_gb = ata_get_size_gb(boot_drive);
+    kernel_api.disk_size_mb = ata_get_size_mb(boot_drive);
     kernel_api.window_maximized = 1;
 }
 
@@ -894,7 +896,19 @@ void kernel_main(uint64_t multiboot_addr) {
         if (tag->type == 8) fb = (struct multiboot_tag_framebuffer*)tag;
         if (tag->type == 4) {
             struct multiboot_tag_basic_meminfo* meminfo = (struct multiboot_tag_basic_meminfo*)tag;
-            global_ram_mb = (meminfo->mem_upper + 1024) / 1024;
+            if (global_ram_mb == 0) global_ram_mb = (meminfo->mem_upper + 1024) / 1024;
+        }
+        if (tag->type == 6) {
+            struct multiboot_tag_mmap* mmap = (struct multiboot_tag_mmap*)tag;
+            uint64_t total_mem = 0;
+            for (struct multiboot_mmap_entry* entry = mmap->entries;
+                 (uint8_t*)entry < (uint8_t*)tag + tag->size;
+                 entry = (struct multiboot_mmap_entry*)((uintptr_t)entry + mmap->entry_size)) {
+                if (entry->type == 1) {
+                    total_mem += entry->len;
+                }
+            }
+            global_ram_mb = (uint32_t)(total_mem / (1024 * 1024));
         }
     }
     if (fb && fb->framebuffer_addr != 0) {

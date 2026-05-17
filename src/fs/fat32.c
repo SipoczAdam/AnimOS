@@ -43,6 +43,10 @@ int fat32_init() {
     return -1;
 }
 
+uint8_t fat32_get_current_drive() {
+    return current_drive;
+}
+
 static uint32_t get_sector_for_cluster(uint32_t cluster) {
     return data_start_sector + (cluster - 2) * bpb.sectors_per_cluster;
 }

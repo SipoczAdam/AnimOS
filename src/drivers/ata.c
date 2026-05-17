@@ -15,18 +15,22 @@ static int ata_wait_drq() {
 
 int ata_identify(uint8_t drive) {
     outb(0x1F6, (drive == 0) ? 0xA0 : 0xB0);
+    io_wait();
     outb(0x1F2, 0);
     outb(0x1F3, 0);
     outb(0x1F4, 0);
     outb(0x1F5, 0);
     outb(0x1F7, 0xEC);
 
-    uint8_t status = inb(0x1F7);
+    // 400ns delay
+    for(int i = 0; i < 4; i++) inb(ATA_PRIMARY_STATUS);
+
+    uint8_t status = inb(ATA_PRIMARY_STATUS);
     if (status == 0 || status == 0xFF) return -1; // No drive
 
     if (ata_wait_bsy() != 0) return -1;
 
-    status = inb(0x1F7);
+    status = inb(ATA_PRIMARY_STATUS);
     if (status & ATA_STATUS_ERR) return -1;
 
     if (ata_wait_drq() != 0) return -1;
@@ -39,16 +43,24 @@ int ata_identify(uint8_t drive) {
 
 static uint64_t ata_get_sectors(uint8_t drive) {
     outb(0x1F6, (drive == 0) ? 0xA0 : 0xB0);
+    io_wait();
     outb(0x1F2, 0);
     outb(0x1F3, 0);
     outb(0x1F4, 0);
     outb(0x1F5, 0);
     outb(0x1F7, 0xEC);
 
-    uint8_t status = inb(0x1F7);
+    // 400ns delay
+    for(int i = 0; i < 4; i++) inb(ATA_PRIMARY_STATUS);
+
+    uint8_t status = inb(ATA_PRIMARY_STATUS);
     if (status == 0 || status == 0xFF) return 0;
+
     if (ata_wait_bsy() != 0) return 0;
-    if (inb(0x1F7) & ATA_STATUS_ERR) return 0;
+    
+    status = inb(ATA_PRIMARY_STATUS);
+    if (status & ATA_STATUS_ERR) return 0;
+
     if (ata_wait_drq() != 0) return 0;
 
     uint16_t data[256];

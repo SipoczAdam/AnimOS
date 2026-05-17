@@ -52,6 +52,7 @@ struct fat32_directory_entry {
 #pragma pack(pop)
 
 int fat32_init();
+uint8_t fat32_get_current_drive();
 int fat32_read_file(const char* path, uint8_t* buffer);
 uint32_t fat32_get_file_size(const char* path);
 

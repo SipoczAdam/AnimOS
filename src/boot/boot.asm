@@ -21,8 +21,10 @@ header_start:
     align 8
     dw 1                         ; type 1
     dw 0                         ; flags
-    dd 12                        ; size
+    dd 20                        ; size
     dd 8                         ; request framebuffer
+    dd 4                         ; request basic meminfo
+    dd 6                         ; request mmap
     dd 0                         ; padding to 8 bytes
 
     ; End tag

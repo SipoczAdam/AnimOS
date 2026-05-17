@@ -8,6 +8,7 @@ typedef unsigned int       uint32_t;
 typedef unsigned long long uint64_t;
 typedef int                int32_t;
 typedef unsigned long      size_t;
+typedef unsigned long long uintptr_t;
 
 struct multiboot_tag { uint32_t type; uint32_t size; };
 struct multiboot_tag_framebuffer {
@@ -18,6 +19,21 @@ struct multiboot_tag_framebuffer {
 
 struct multiboot_tag_basic_meminfo {
     uint32_t type; uint32_t size; uint32_t mem_lower; uint32_t mem_upper;
-};
+} __attribute__((packed));
+
+struct multiboot_mmap_entry {
+    uint64_t addr;
+    uint64_t len;
+    uint32_t type;
+    uint32_t zero;
+} __attribute__((packed));
+
+struct multiboot_tag_mmap {
+    uint32_t type;
+    uint32_t size;
+    uint32_t entry_size;
+    uint32_t entry_version;
+    struct multiboot_mmap_entry entries[0];
+} __attribute__((packed));
 
 #endif

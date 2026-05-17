@@ -7,6 +7,10 @@ int vfs_init() {
     return fat32_init();
 }
 
+uint8_t vfs_get_boot_drive() {
+    return fat32_get_current_drive();
+}
+
 int vfs_read_file(const char* path, uint8_t* buffer) {
     // Basic "Sysroot:/" mapping
     if (memcmp_custom(path, "Sysroot:/", 9) == 0) {
