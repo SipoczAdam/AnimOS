@@ -66,6 +66,29 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     } 
     else if (selected_menu == 1) { // About
         api->draw_string_scaled(cx, cy, "About AnimOS", 0x222222, 90, target_fb);
+        
+        // Boot Logo - Centered between the actual end of text and the right window edge
+        if (api->boot_logo) {
+            uint32_t logo_size = (w > 900) ? 180 : 120; // Slightly smaller in windowed mode
+            
+            // Calculate the actual right edge of the info text (widest line is usually Processor)
+            uint32_t label_w = api->get_string_width_scaled("Processor: ", 70);
+            uint32_t cpu_w = api->get_string_width_scaled(api->cpu_brand, 70);
+            uint32_t actual_text_end = cx + label_w + cpu_w; 
+            
+            // Center the logo in the remaining space to the right
+            uint32_t logo_x = actual_text_end + (w - actual_text_end) / 2 - (logo_size / 2);
+            
+            // Safety: Ensure it doesn't overlap text if window is very small
+            if (logo_x < actual_text_end + 20) logo_x = actual_text_end + 20;
+            if (logo_x + logo_size > w - 20) logo_x = w - logo_size - 20;
+
+            // Vertically center relative to the info lines (from Version to Storage)
+            uint32_t logo_y = cy + 50 + (125 / 2) - (logo_size / 2);
+            
+            api->draw_icon_scaled(logo_x, logo_y, logo_size, logo_size, api->boot_logo, target_fb);
+        }
+
         api->draw_string_scaled(cx, cy + 50, "Version: AnimOS Experience 1.0 (Alpha)", 0x555555, 70, target_fb);
         api->draw_string_scaled(cx, cy + 80, "Kernel: AnimKernel v1.0 x86_64 64bit", 0x555555, 70, target_fb);
         

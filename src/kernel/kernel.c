@@ -701,6 +701,7 @@ void init_kernel_api() {
     kernel_api.draw_pixel = draw_pixel; kernel_api.blend_colors = blend_colors; kernel_api.get_wallpaper_pixel = get_wallpaper_pixel_fast;
     kernel_api.draw_string_scaled = draw_string_scaled; kernel_api.get_string_width_scaled = get_string_width_scaled; kernel_api.draw_icon_scaled = draw_icon_scaled;
     kernel_api.close_icon = close_icon_data; kernel_api.maximize_icon = maximize_icon_data; kernel_api.minimize_icon = minimize_icon_data;
+    kernel_api.boot_logo = boot_logo_data;
     kernel_api.window_buffer = preferences_window_buffer; kernel_api.draw_rect = draw_rect; kernel_api.blit_buffer = blit_buffer;
     kernel_api.get_mouse_pos = get_mouse_pos; kernel_api.yield = kernel_yield;
 
