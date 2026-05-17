@@ -11,3 +11,4 @@ isodir/
 # Docker build során esetleg keletkező logok
 *.log
 hdd.img
+hdd.vdi
