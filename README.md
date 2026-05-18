@@ -11,6 +11,7 @@ See the [LICENSE](LICENSE) and [EULA](EULA) files for details.
 ## 💻 System Requirements
 | Resource | Minimum Requirement | Recommended |
 | :--- | :--- | :--- |
+|**Architecture**| Any 64 bit Intel / Any AMD | Intel Core i5 or AMD equivalent or higher |
 
 ## 🛠️ Build and Run
 To build the OS using the Docker-based toolchain:
