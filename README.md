@@ -11,7 +11,12 @@ See the [LICENSE](LICENSE) and [EULA](EULA) files for details.
 ## 💻 System Requirements
 | Resource | Minimum Requirement | Recommended |
 | :--- | :--- | :--- |
-|**Architecture**| Any 64 bit Intel / Any AMD | Intel Core i5 or AMD equivalent or higher |
+|**Architecture**| x86_64 32 bit | x86_64 64 bit |
+|**Processor**| Intel Core i3 or AMD Ryzen 3 | Intel Core i5 or AMD Ryzen 5 or newer |
+|**RAM**| 2 GB | 4 GB or more |
+|**Storage**| 1 GB | 5 GB or more |
+|**Network**| Intel E1000 compatible NIC | Intel E1000 (with active DHCP network/LAN) |
+|**Graphics**| Any Integrated GPU | Any Dedicated GPU |
 
 ## 🛠️ Build and Run
 To build the OS using the Docker-based toolchain:
