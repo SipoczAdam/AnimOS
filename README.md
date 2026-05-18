@@ -10,6 +10,7 @@ See the [LICENSE](LICENSE) and [EULA](EULA) files for details.
 
 ## 💻 System Requirements
 | Resource | Minimum Requirement | Recommended |
+| :--- | :--- | :--- |
 
 ## 🛠️ Build and Run
 To build the OS using the Docker-based toolchain:
