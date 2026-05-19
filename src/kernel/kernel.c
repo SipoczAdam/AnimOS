@@ -697,12 +697,50 @@ void kernel_yield() {
     }
 }
 
+void draw_rounded_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t radius, uint32_t color, struct multiboot_tag_framebuffer* fb) {
+    if (!fb) fb = global_fb;
+    for (uint32_t iy = y; iy < y + h; iy++) {
+        if (iy >= fb->framebuffer_height) break;
+        for (uint32_t ix = x; ix < x + w; ix++) {
+            if (ix >= fb->framebuffer_width) break;
+            
+            uint32_t dx = 0, dy = 0;
+            int is_corner = 0;
+            if (ix < x + radius && iy < y + radius) { dx = (x + radius) - ix; dy = (y + radius) - iy; is_corner = 1; }
+            else if (ix > x + w - radius && iy < y + radius) { dx = ix - (x + w - radius); dy = (y + radius) - iy; is_corner = 1; }
+            else if (ix < x + radius && iy > y + h - radius) { dx = (x + radius) - ix; dy = iy - (y + h - radius); is_corner = 1; }
+            else if (ix > x + w - radius && iy > y + h - radius) { dx = ix - (x + w - radius); dy = iy - (y + h - radius); is_corner = 1; }
+            
+            if (is_corner) {
+                uint32_t dist_sq = dx*dx + dy*dy;
+                uint32_t r_sq = radius * radius;
+                uint32_t inner_r_sq = (radius > 0) ? (radius - 1) * (radius - 1) : 0;
+                
+                if (dist_sq >= r_sq) continue;
+                if (dist_sq > inner_r_sq) {
+                    uint8_t alpha = (255 * (r_sq - dist_sq)) / (r_sq - inner_r_sq);
+                    uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
+                    uint32_t offset = iy * fb->framebuffer_pitch + ix * (fb->framebuffer_bpp / 8);
+                    uint32_t bg = (fb->framebuffer_bpp == 32) ? *(uint32_t*)(screen + offset) : (screen[offset+2] << 16) | (screen[offset+1] << 8) | screen[offset];
+                    draw_pixel(ix, iy, blend_colors(bg, color, alpha), fb);
+                } else {
+                    draw_pixel(ix, iy, color, fb);
+                }
+            } else {
+                draw_pixel(ix, iy, color, fb);
+            }
+        }
+    }
+}
+
 void init_kernel_api() {
     kernel_api.draw_pixel = draw_pixel; kernel_api.blend_colors = blend_colors; kernel_api.get_wallpaper_pixel = get_wallpaper_pixel_fast;
     kernel_api.draw_string_scaled = draw_string_scaled; kernel_api.get_string_width_scaled = get_string_width_scaled; kernel_api.draw_icon_scaled = draw_icon_scaled;
     kernel_api.close_icon = close_icon_data; kernel_api.maximize_icon = maximize_icon_data; kernel_api.minimize_icon = minimize_icon_data;
     kernel_api.boot_logo = boot_logo_data;
-    kernel_api.window_buffer = preferences_window_buffer; kernel_api.draw_rect = draw_rect; kernel_api.blit_buffer = blit_buffer;
+    kernel_api.window_buffer = preferences_window_buffer; kernel_api.draw_rect = draw_rect; 
+    kernel_api.draw_rounded_rect = draw_rounded_rect;
+    kernel_api.blit_buffer = blit_buffer;
     kernel_api.get_mouse_pos = get_mouse_pos; kernel_api.yield = kernel_yield;
     kernel_api.list_dir = vfs_list_dir;
 

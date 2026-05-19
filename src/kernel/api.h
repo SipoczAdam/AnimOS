@@ -21,6 +21,7 @@ typedef struct {
     uint32_t* window_buffer;
 
     void (*draw_rect)(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color, struct multiboot_tag_framebuffer* fb);
+    void (*draw_rounded_rect)(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t radius, uint32_t color, struct multiboot_tag_framebuffer* fb);
     void (*blit_buffer)(uint32_t* src_buffer, struct multiboot_tag_framebuffer* fb);
     void (*get_mouse_pos)(int32_t* mx, int32_t* my, uint8_t* clicked);
     void (*yield)();

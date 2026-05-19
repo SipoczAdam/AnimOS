@@ -47,7 +47,7 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     if (api->maximize_icon) api->draw_icon_scaled(max_x, max_y, max_size, max_size, api->maximize_icon, target_fb);
 
     // 5. Sidebar Menu Items
-    const char* menu_items[] = {"Display", "About"};
+    const char* menu_items[] = {"Wallpaper", "About"};
     for (int i = 0; i < 2; i++) {
         uint32_t item_y = title_bar_h + 20 + (i * 40);
         if (i == selected_menu) {
@@ -60,8 +60,8 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     uint32_t cx = sidebar_w + 40;
     uint32_t cy = title_bar_h + 40;
 
-    if (selected_menu == 0) { // Display
-        api->draw_string_scaled(cx, cy, "Display Settings", 0x222222, 90, target_fb);
+    if (selected_menu == 0) { // Wallpaper
+        api->draw_string_scaled(cx, cy, "Wallpaper Settings", 0x222222, 90, target_fb);
         
         uint32_t grid_y = cy + 60;
         uint32_t item_w = 150;
@@ -82,9 +82,13 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
             uint32_t col = i % items_per_row;
             uint32_t ix = cx + col * item_w;
             uint32_t iy = grid_y + row * (item_h + 10);
+            uint32_t box_w = item_w - 10;
 
-            api->draw_rect(ix, iy, item_w - 10, item_h, 0xF0F0F0, target_fb);
-            api->draw_string_scaled(ix + 10, iy + (item_h - 14) / 2, name, 0x444444, 60, target_fb);
+            api->draw_rounded_rect(ix, iy, box_w, item_h, 8, 0xF0F0F0, target_fb);
+            
+            uint32_t text_w = api->get_string_width_scaled(name, 60);
+            uint32_t tx = ix + (box_w > text_w ? (box_w - text_w) / 2 : 0);
+            api->draw_string_scaled(tx, iy + (item_h - 14) / 2, name, 0x444444, 60, target_fb);
             
             i++;
         }
