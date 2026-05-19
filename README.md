@@ -35,6 +35,7 @@ start build-run.bat
 ```
 
 To run the system in Virtualbox, you need to attach hdd.vdi to Virtualbox
+
 ⚠️ Virtualbox have to be added to PATH!
 
 ## 📬 Contact
