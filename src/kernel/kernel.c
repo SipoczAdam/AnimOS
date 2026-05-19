@@ -745,6 +745,16 @@ void init_kernel_api() {
     kernel_api.list_dir = vfs_list_dir;
 
     get_cpu_brand(kernel_api.cpu_brand);
+    
+    // Set current wallpaper name
+    const char* default_wall = "bubble.bmp";
+    int wall_idx = 0;
+    while(default_wall[wall_idx] && wall_idx < 255) {
+        kernel_api.current_wallpaper[wall_idx] = default_wall[wall_idx];
+        wall_idx++;
+    }
+    kernel_api.current_wallpaper[wall_idx] = 0;
+
     kernel_api.ram_size_mb = global_ram_mb;
     
     uint8_t boot_drive = vfs_get_boot_drive();

@@ -29,6 +29,7 @@ typedef struct {
 
     // System Info
     char cpu_brand[49];
+    char current_wallpaper[256];
     uint32_t ram_size_mb;
     uint32_t disk_size_gb;
     uint32_t disk_size_mb;

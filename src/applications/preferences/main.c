@@ -18,6 +18,27 @@ void app_itoa(uint32_t n, char* s) {
     for (int j = 0; j < i / 2; j++) { char c = s[j]; s[j] = s[i-1-j]; s[i-1-j] = c; }
 }
 
+int app_strcmp(const char* s1, const char* s2) {
+    while (*s1 && (*s1 == *s2)) { s1++; s2++; }
+    return *(unsigned char*)s1 - *(unsigned char*)s2;
+}
+
+int app_stricmp(const char* s1, const char* s2) {
+    while (*s1 && *s2) {
+        char c1 = *s1;
+        char c2 = *s2;
+        if (c1 >= 'A' && c1 <= 'Z') c1 += 'a' - 'A';
+        if (c2 >= 'A' && c2 <= 'Z') c2 += 'a' - 'A';
+        if (c1 != c2) return (unsigned char)c1 - (unsigned char)c2;
+        s1++; s2++;
+    }
+    char c1 = *s1;
+    char c2 = *s2;
+    if (c1 >= 'A' && c1 <= 'Z') c1 += 'a' - 'A';
+    if (c2 >= 'A' && c2 <= 'Z') c2 += 'a' - 'A';
+    return (unsigned char)c1 - (unsigned char)c2;
+}
+
 void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, struct multiboot_tag_framebuffer* target_fb) {
     uint32_t w = fb->framebuffer_width;
     uint32_t h = fb->framebuffer_height;
@@ -84,7 +105,12 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
             uint32_t iy = grid_y + row * (item_h + 10);
             uint32_t box_w = item_w - 10;
 
-            api->draw_rounded_rect(ix, iy, box_w, item_h, 8, 0xF0F0F0, target_fb);
+            uint32_t bg_color = 0xF0F0F0;
+            if (app_stricmp(name, api->current_wallpaper) == 0) {
+                bg_color = 0xD5D5D5;
+            }
+
+            api->draw_rounded_rect(ix, iy, box_w, item_h, 8, bg_color, target_fb);
             
             uint32_t text_w = api->get_string_width_scaled(name, 60);
             uint32_t tx = ix + (box_w > text_w ? (box_w - text_w) / 2 : 0);
