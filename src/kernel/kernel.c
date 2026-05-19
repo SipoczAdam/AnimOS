@@ -45,6 +45,12 @@ uint8_t* wallpaper_data = 0;
 uint32_t* scaled_wallpaper = 0;
 uint32_t* screen_backbuffer = 0;
 uint8_t* cursor_data = 0;
+uint8_t* normal_cursor_data = 0;
+uint8_t* working_cursor_data = 0;
+uint32_t working_frames_offsets[64];
+int working_frames_count = 0;
+int current_working_frame = 0;
+int is_system_busy = 0;
 uint8_t* power_icon_data = 0;
 uint8_t* arial_font_data = 0;
 uint8_t* arial_font_xml_data = 0;
@@ -335,6 +341,14 @@ void kernel_ui_refresh_scaling() {
         }
     }
 
+    // Advance working frame if busy (with speed divider)
+    static uint32_t animation_speed_divider = 0;
+    if (is_system_busy && working_frames_count > 0) {
+        if (animation_speed_divider++ % 3 == 0) {
+            current_working_frame = (current_working_frame + 1) % working_frames_count;
+        }
+    }
+
     // Draw new cursor and save its position
     draw_cursor_simple(mouse_x, mouse_y, global_fb);
     scaling_last_mx = mouse_x;
@@ -357,7 +371,7 @@ void precompute_scaled_wallpaper(struct multiboot_tag_framebuffer* fb) {
             uint8_t* p = wall_info.pixels + (src_y * wall_info.row_size) + ((int32_t)(x * wall_info.width / fb->framebuffer_width) * (wall_info.bpp / 8));
             scaled_wallpaper[y * fb->framebuffer_width + x] = (p[2] << 16) | (p[1] << 8) | p[0];
         }
-        if (y % 16 == 0) kernel_ui_refresh_scaling();
+        if (y % 4 == 0) kernel_ui_refresh_scaling();
     }
     if (!screen_backbuffer)
         screen_backbuffer = (uint32_t*)malloc_custom(fb->framebuffer_width * fb->framebuffer_height * sizeof(uint32_t));
@@ -374,6 +388,9 @@ void set_wallpaper(const char* name) {
     uint32_t size = vfs_get_file_size(path);
     if (size == 0) return;
 
+    is_system_busy = 1;
+    current_working_frame = 0;
+
     if (!raw_wallpaper_buffer || size > raw_wallpaper_buffer_size) {
         raw_wallpaper_buffer = (uint8_t*)malloc_custom(size + 1);
         raw_wallpaper_buffer_size = size;
@@ -388,6 +405,7 @@ void set_wallpaper(const char* name) {
         // Update current_wallpaper in API
         strcpy_custom(kernel_api.current_wallpaper, name);
     }
+    is_system_busy = 0;
 }
 
 uint32_t get_wallpaper_pixel_fast(uint32_t x, uint32_t y, struct multiboot_tag_framebuffer* fb) {
@@ -895,15 +913,57 @@ void draw_preferences_window(struct multiboot_tag_framebuffer* fb, app_event_t e
 
 /* --- Cursor Handling --- */
 
+void find_ani_frames(uint8_t* data, uint32_t size) {
+    working_frames_count = 0;
+    if (!data) return;
+    if (memcmp_custom(data, "RIFF", 4) != 0) return;
+    if (memcmp_custom(data + 8, "ACON", 4) != 0) return;
+    
+    uint32_t pos = 12;
+    while (pos < size - 8) {
+        if (memcmp_custom(data + pos, "icon", 4) == 0) {
+            uint32_t chunk_size = *(uint32_t*)(data + pos + 4);
+            if (working_frames_count < 64) {
+                working_frames_offsets[working_frames_count++] = pos + 8;
+            }
+            pos += 8 + chunk_size;
+            if (chunk_size % 2) pos++; 
+        } else if (memcmp_custom(data + pos, "LIST", 4) == 0) {
+            pos += 12; 
+        } else {
+            uint32_t chunk_size = *(uint32_t*)(data + pos + 4);
+            pos += 8 + chunk_size;
+            if (chunk_size % 2) pos++;
+        }
+    }
+}
+
 void draw_cursor_simple(int32_t mx, int32_t my, struct multiboot_tag_framebuffer* fb) {
     if (!cursor_data) return;
-    uint8_t* dib = cursor_data + 6 + 16; struct bmp_info_header* bih = (struct bmp_info_header*)dib; uint8_t* pixels = dib + bih->biSize;
+    uint8_t* actual_cursor = cursor_data;
+    if (is_system_busy && working_cursor_data && working_frames_count > 0) {
+        actual_cursor = working_cursor_data + working_frames_offsets[current_working_frame];
+    }
+    uint8_t* dib = actual_cursor + 6 + 16; struct bmp_info_header* bih = (struct bmp_info_header*)dib; uint8_t* pixels = dib + bih->biSize;
     int32_t w = bih->biWidth, h = bih->biHeight / 2;
     for (int32_t y = 0; y < h; y++) {
         for (int32_t x = 0; x < w; x++) {
             int32_t px = mx + x, py = my + y; if (px < 0 || px >= (int32_t)fb->framebuffer_width || py < 0 || py >= (int32_t)fb->framebuffer_height) continue;
             uint8_t* p = pixels + ((h - 1 - y) * w * 4) + (x * 4);
-            if (p[3] > 128) draw_pixel(px, py, (p[2] << 16) | (p[1] << 8) | p[0], fb);
+            uint8_t alpha = p[3];
+            if (alpha > 0) {
+                uint32_t color = (p[2] << 16) | (p[1] << 8) | p[0];
+                if (alpha == 255) {
+                    draw_pixel(px, py, color, fb);
+                } else {
+                    uint8_t* screen = (uint8_t*)fb->framebuffer_addr;
+                    uint32_t offset = py * fb->framebuffer_pitch + px * (fb->framebuffer_bpp / 8);
+                    uint32_t bg;
+                    if (fb->framebuffer_bpp == 32) bg = *(uint32_t*)(screen + offset);
+                    else bg = (screen[offset+2] << 16) | (screen[offset+1] << 8) | screen[offset];
+                    draw_pixel(px, py, blend_colors(bg, color, alpha), fb);
+                }
+            }
         }
     }
 }
@@ -1090,6 +1150,11 @@ void kernel_main(uint64_t multiboot_addr) {
         wallpaper_data = load_asset("Sysroot:/AnimOS/assets/wallpapers/bubble.bmp"); init_wallpaper_info(); precompute_scaled_wallpaper(fb);
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 25, fb);
         cursor_data = load_asset("Sysroot:/AnimOS/assets/cursor/Default/Normal Select.cur");
+        normal_cursor_data = cursor_data;
+        working_cursor_data = load_asset("Sysroot:/AnimOS/assets/cursor/Default/Working In Background.ani");
+        if (working_cursor_data) {
+            find_ani_frames(working_cursor_data, vfs_get_file_size("Sysroot:/AnimOS/assets/cursor/Default/Working In Background.ani"));
+        }
         power_icon_data = load_asset("Sysroot:/AnimOS/assets/taskbar/power.bmp");
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 40, fb);
         offline_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/offline.bmp"); online_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/online.bmp");

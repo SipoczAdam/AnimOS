@@ -208,8 +208,13 @@ int fat32_read_file(const char* path, uint8_t* buffer) {
             
             // Allow kernel to refresh UI (cursor) during large file reads
             extern void kernel_ui_refresh_simple();
+            extern void kernel_ui_refresh_scaling();
+            extern int is_system_busy;
             static uint32_t refresh_counter = 0;
-            if (refresh_counter++ % 32 == 0) kernel_ui_refresh_simple();
+            if (refresh_counter++ % 32 == 0) {
+                if (is_system_busy) kernel_ui_refresh_scaling();
+                else kernel_ui_refresh_simple();
+            }
 
             uint32_t to_copy = 512;
             if (size - bytes_read < 512) to_copy = size - bytes_read;
