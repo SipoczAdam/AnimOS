@@ -27,3 +27,12 @@ uint32_t vfs_get_file_size(const char* path) {
     }
     return 0;
 }
+
+int vfs_list_dir(const char* path, char* buffer, uint32_t max_size) {
+    if (memcmp_custom(path, "Sysroot:/", 9) == 0) {
+        const char* internal_path = path + 9;
+        return fat32_list_dir(internal_path, buffer, max_size);
+    }
+    return -1;
+}
+

@@ -7,6 +7,8 @@ static uint32_t btn_size = 22;
 
 // Internal State
 static int selected_menu = 0;
+static char wallpaper_list[1024];
+static int wallpaper_count = 0;
 
 void app_itoa(uint32_t n, char* s) {
     int i = 0;
@@ -60,9 +62,32 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
 
     if (selected_menu == 0) { // Display
         api->draw_string_scaled(cx, cy, "Display Settings", 0x222222, 90, target_fb);
-        api->draw_string_scaled(cx, cy + 50, "Resolution: 1024x768 (VBE)", 0x555555, 70, target_fb);
-        api->draw_string_scaled(cx, cy + 80, "Wallpaper: bubble.bmp", 0x555555, 70, target_fb);
-        api->draw_string_scaled(cx, cy + 110, "Scaling: Nearest Neighbor", 0x555555, 70, target_fb);
+        
+        uint32_t grid_y = cy + 60;
+        uint32_t item_w = 150;
+        uint32_t item_h = 40;
+        uint32_t items_per_row = (w - sidebar_w - 60) / item_w;
+        if (items_per_row == 0) items_per_row = 1;
+
+        char* p = wallpaper_list;
+        int i = 0;
+        while (*p && i < 100) {
+            char name[256];
+            int k = 0;
+            while (*p && *p != '\n' && k < 255) name[k++] = *p++;
+            name[k] = 0;
+            if (*p == '\n') p++;
+
+            uint32_t row = i / items_per_row;
+            uint32_t col = i % items_per_row;
+            uint32_t ix = cx + col * item_w;
+            uint32_t iy = grid_y + row * (item_h + 10);
+
+            api->draw_rect(ix, iy, item_w - 10, item_h, 0xF0F0F0, target_fb);
+            api->draw_string_scaled(ix + 10, iy + (item_h - 14) / 2, name, 0x444444, 60, target_fb);
+            
+            i++;
+        }
     } 
     else if (selected_menu == 1) { // About
         api->draw_string_scaled(cx, cy, "About AnimOS", 0x222222, 90, target_fb);
@@ -133,6 +158,8 @@ __attribute__((section(".text.main")))
 void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t event) {
     if (event == APP_EVENT_INIT) {
         selected_menu = 0;
+        for (int i = 0; i < 1024; i++) wallpaper_list[i] = 0;
+        api->list_dir("Sysroot:/AnimOS/assets/wallpapers", wallpaper_list, 1024);
     }
 
     if (event == APP_EVENT_CLICK) {

@@ -24,6 +24,7 @@ typedef struct {
     void (*blit_buffer)(uint32_t* src_buffer, struct multiboot_tag_framebuffer* fb);
     void (*get_mouse_pos)(int32_t* mx, int32_t* my, uint8_t* clicked);
     void (*yield)();
+    int (*list_dir)(const char* path, char* buffer, uint32_t max_size);
 
     // System Info
     char cpu_brand[49];

@@ -226,3 +226,82 @@ uint32_t fat32_get_file_size(const char* path) {
     }
     return 0;
 }
+
+int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
+    struct fat32_directory_entry entry;
+    uint32_t dir_cluster;
+
+    if (path[0] == '/' && path[1] == 0) {
+        dir_cluster = bpb.root_cluster;
+    } else {
+        if (find_entry(path, &entry) != 0) return -1;
+        if (!(entry.attributes & 0x10)) return -1; // Not a directory
+        dir_cluster = entry.cluster_low | (entry.cluster_high << 16);
+        if (dir_cluster == 0) dir_cluster = bpb.root_cluster;
+    }
+
+    uint32_t buffer_offset = 0;
+    char lfn_buffer[256];
+    for (int k = 0; k < 256; k++) lfn_buffer[k] = 0;
+
+    while (dir_cluster >= 2 && dir_cluster < 0x0FFFFFF8) {
+        for (uint32_t s = 0; s < bpb.sectors_per_cluster; s++) {
+            uint32_t sector = get_sector_for_cluster(dir_cluster) + s;
+            if (ata_read_sectors(current_drive, sector, 1, sector_buffer) != 0) return buffer_offset;
+
+            for (int j = 0; j < 16; j++) {
+                uint8_t* entry_ptr = sector_buffer + (j * 32);
+                if (entry_ptr[0] == 0) return buffer_offset;
+                if (entry_ptr[0] == 0xE5) { for(int k=0; k<256; k++) lfn_buffer[k] = 0; continue; }
+
+                if (entry_ptr[11] == 0x0F) {
+                    struct fat32_lfn_entry* lfn = (struct fat32_lfn_entry*)entry_ptr;
+                    int sequence = (lfn->order & 0x3F);
+                    if (sequence > 0 && sequence <= 20) {
+                        int index = (sequence - 1) * 13;
+                        uint16_t* n1 = lfn->name1; uint16_t* n2 = lfn->name2; uint16_t* n3 = lfn->name3;
+                        for(int k=0; k<5; k++) lfn_buffer[index + k] = (n1[k] == 0 || n1[k] == 0xFFFF) ? 0 : (char)(n1[k] & 0xFF);
+                        for(int k=0; k<6; k++) lfn_buffer[index + 5 + k] = (n2[k] == 0 || n2[k] == 0xFFFF) ? 0 : (char)(n2[k] & 0xFF);
+                        for(int k=0; k<2; k++) lfn_buffer[index + 11 + k] = (n3[k] == 0 || n3[k] == 0xFFFF) ? 0 : (char)(n3[k] & 0xFF);
+                        if (lfn->order & 0x40) lfn_buffer[index + 13] = 0;
+                    }
+                    continue;
+                }
+
+                struct fat32_directory_entry* d_entry = (struct fat32_directory_entry*)entry_ptr;
+                if (d_entry->attributes & 0x08) { for(int k=0; k<256; k++) lfn_buffer[k] = 0; continue; }
+
+                char name[256];
+                if (lfn_buffer[0] != 0) {
+                    int k = 0;
+                    while (lfn_buffer[k] && k < 255) { name[k] = lfn_buffer[k]; k++; }
+                    name[k] = 0;
+                } else {
+                    int k, l = 0;
+                    for (k = 0; k < 8 && d_entry->name[k] != ' '; k++) name[l++] = d_entry->name[k];
+                    if (d_entry->ext[0] != ' ') {
+                        name[l++] = '.';
+                        for (k = 0; k < 3 && d_entry->ext[k] != ' '; k++) name[l++] = d_entry->ext[k];
+                    }
+                    name[l] = 0;
+                }
+                
+                if (!(name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0)))) {
+                    int name_len = 0;
+                    while (name[name_len]) name_len++;
+                    if (buffer_offset + name_len + 1 < max_size) {
+                        for (int k = 0; k < name_len; k++) buffer[buffer_offset++] = name[k];
+                        buffer[buffer_offset++] = '\n';
+                    } else {
+                        return buffer_offset;
+                    }
+                }
+
+                for(int k=0; k<256; k++) lfn_buffer[k] = 0;
+            }
+        }
+        dir_cluster = get_next_cluster(dir_cluster);
+    }
+    return buffer_offset;
+}
+

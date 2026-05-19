@@ -704,6 +704,7 @@ void init_kernel_api() {
     kernel_api.boot_logo = boot_logo_data;
     kernel_api.window_buffer = preferences_window_buffer; kernel_api.draw_rect = draw_rect; kernel_api.blit_buffer = blit_buffer;
     kernel_api.get_mouse_pos = get_mouse_pos; kernel_api.yield = kernel_yield;
+    kernel_api.list_dir = vfs_list_dir;
 
     get_cpu_brand(kernel_api.cpu_brand);
     kernel_api.ram_size_mb = global_ram_mb;
