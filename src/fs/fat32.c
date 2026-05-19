@@ -206,6 +206,11 @@ int fat32_read_file(const char* path, uint8_t* buffer) {
         for (uint32_t s = 0; s < bpb.sectors_per_cluster && bytes_read < size; s++) {
             if (ata_read_sectors(current_drive, sector + s, 1, sector_buffer) != 0) return -1;
             
+            // Allow kernel to refresh UI (cursor) during large file reads
+            extern void kernel_ui_refresh_simple();
+            static uint32_t refresh_counter = 0;
+            if (refresh_counter++ % 32 == 0) kernel_ui_refresh_simple();
+
             uint32_t to_copy = 512;
             if (size - bytes_read < 512) to_copy = size - bytes_read;
             

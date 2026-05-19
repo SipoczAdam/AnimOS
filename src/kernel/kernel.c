@@ -70,6 +70,7 @@ uint32_t last_clicked_icon = -1;
 int dialog_state = 0; 
 int preferences_needs_init = 0;
 uint32_t global_ram_mb = 0;
+static int desktop_ready = 0;
 
 volatile int32_t mouse_x = 512, mouse_y = 384;
 
@@ -105,6 +106,9 @@ void init_kernel_api();
 void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot_addr);
 void redraw_desktop(struct multiboot_tag_framebuffer* fb);
 void blit_buffer(uint32_t* src_buffer, struct multiboot_tag_framebuffer* fb);
+void draw_cursor_simple(int32_t mx, int32_t my, struct multiboot_tag_framebuffer* fb);
+void kernel_ui_refresh_simple();
+void kernel_ui_refresh_scaling();
 void mouse_init();
 void pic_remap();
 void idt_set_gate(uint8_t num, uint64_t base, uint16_t sel, uint8_t flags);
@@ -296,11 +300,56 @@ void init_wallpaper_info() {
     wall_info.row_size = (wall_info.width * (wall_info.bpp / 8) + 3) & ~3;
 }
 
+void kernel_ui_refresh_simple() {
+    if (!desktop_ready || !global_fb || !screen_backbuffer) return;
+    blit_buffer(screen_backbuffer, global_fb);
+    draw_cursor_simple(mouse_x, mouse_y, global_fb);
+}
+
+static int32_t scaling_last_mx = -1;
+static int32_t scaling_last_my = -1;
+
+void kernel_ui_refresh_scaling() {
+    if (!global_fb || !screen_backbuffer) return;
+    
+    // Erase old cursor by blitting the 32x32 area from the clean backbuffer
+    if (scaling_last_mx != -1) {
+        for (int32_t y = 0; y < 32; y++) {
+            int32_t py = scaling_last_my + y;
+            if (py < 0 || py >= (int32_t)global_fb->framebuffer_height) continue;
+            
+            uint8_t* dest = (uint8_t*)global_fb->framebuffer_addr + py * global_fb->framebuffer_pitch;
+            uint32_t* src_row = screen_backbuffer + py * screen_w;
+
+            for (int32_t x = 0; x < 32; x++) {
+                int32_t px = scaling_last_mx + x;
+                if (px < 0 || px >= (int32_t)global_fb->framebuffer_width) continue;
+
+                uint32_t color = src_row[px];
+                if (global_fb->framebuffer_bpp == 32) {
+                    ((uint32_t*)dest)[px] = color;
+                } else if (global_fb->framebuffer_bpp == 24) {
+                    dest[px*3] = color & 0xFF; dest[px*3+1] = (color >> 8) & 0xFF; dest[px*3+2] = (color >> 16) & 0xFF;
+                }
+            }
+        }
+    }
+
+    // Draw new cursor and save its position
+    draw_cursor_simple(mouse_x, mouse_y, global_fb);
+    scaling_last_mx = mouse_x;
+    scaling_last_my = mouse_y;
+}
+
 void precompute_scaled_wallpaper(struct multiboot_tag_framebuffer* fb) {
     if (!wallpaper_data || !wall_info.pixels || !fb) return;
     if (!scaled_wallpaper)
         scaled_wallpaper = (uint32_t*)malloc_custom(fb->framebuffer_width * fb->framebuffer_height * sizeof(uint32_t));
     
+    // Initialize scaling cursor tracking with current position to erase the click "ghost"
+    scaling_last_mx = mouse_x;
+    scaling_last_my = mouse_y;
+
     for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
         for (uint32_t x = 0; x < fb->framebuffer_width; x++) {
             int32_t abs_bmp_h = wall_info.height < 0 ? -wall_info.height : wall_info.height;
@@ -308,6 +357,7 @@ void precompute_scaled_wallpaper(struct multiboot_tag_framebuffer* fb) {
             uint8_t* p = wall_info.pixels + (src_y * wall_info.row_size) + ((int32_t)(x * wall_info.width / fb->framebuffer_width) * (wall_info.bpp / 8));
             scaled_wallpaper[y * fb->framebuffer_width + x] = (p[2] << 16) | (p[1] << 8) | p[0];
         }
+        if (y % 16 == 0) kernel_ui_refresh_scaling();
     }
     if (!screen_backbuffer)
         screen_backbuffer = (uint32_t*)malloc_custom(fb->framebuffer_width * fb->framebuffer_height * sizeof(uint32_t));
@@ -880,7 +930,9 @@ void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot
     if (dialog_state == 1) draw_dialog(&back_fb, "Restart", "Are you sure you want to restart the system?");
     else if (dialog_state == 2) draw_dialog(&back_fb, "Shutdown", "Are you sure you want to shutdown the system?");
     
-    draw_cursor_simple(mouse_x, mouse_y, &back_fb); blit_buffer(screen_backbuffer, real_fb);
+    // Blit clean backbuffer to physical screen first, then draw cursor on top of physical screen
+    blit_buffer(screen_backbuffer, real_fb);
+    draw_cursor_simple(mouse_x, mouse_y, real_fb);
 }
 
 void redraw_desktop(struct multiboot_tag_framebuffer* fb) {
@@ -1053,6 +1105,8 @@ void kernel_main(uint64_t multiboot_addr) {
             }
         }
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 100, fb); msleep(200);
+        
+        desktop_ready = 1;
         struct bmp_info_header* pbih = (struct bmp_info_header*)(power_icon_data + sizeof(struct bmp_file_header));
         int32_t picon_h = pbih->biHeight < 0 ? -pbih->biHeight : pbih->biHeight, picon_w = pbih->biWidth, picon_x = 20 + 15, picon_y = (fb->framebuffer_height - 55 - 20) + (55 - picon_h) / 2;
         uint32_t ticks = 0;
