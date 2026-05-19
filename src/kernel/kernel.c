@@ -162,6 +162,12 @@ static uint8_t* bump_ptr = 0;
 void* malloc_custom(uint32_t size) {
     if (bump_ptr == 0) bump_ptr = kernel_end;
     bump_ptr = (uint8_t*)(((uint64_t)bump_ptr + 7) & ~7);
+    
+    // Safety: don't go beyond 1GB for now (identity mapping is 512GB, but let's be safe)
+    if ((uint64_t)bump_ptr > 0x40000000) {
+        return 0; // Out of memory (basic)
+    }
+    
     void* ptr = bump_ptr;
     bump_ptr += size;
     return ptr;
@@ -264,8 +270,20 @@ uint8_t* load_asset(const char* path) {
     uint32_t size = vfs_get_file_size(path);
     if (size == 0) return 0;
     uint8_t* buffer = malloc_custom(size + 1);
+    if (!buffer) return 0;
     if (vfs_read_file(path, buffer) != 0) return 0;
     buffer[size] = 0; return buffer;
+}
+
+void strcpy_custom(char* dst, const char* src) {
+    while (*src) *dst++ = *src++;
+    *dst = 0;
+}
+
+void strcat_custom(char* dst, const char* src) {
+    while (*dst) dst++;
+    while (*src) *dst++ = *src++;
+    *dst = 0;
 }
 
 void init_wallpaper_info() {
@@ -279,8 +297,10 @@ void init_wallpaper_info() {
 }
 
 void precompute_scaled_wallpaper(struct multiboot_tag_framebuffer* fb) {
-    if (!wallpaper_data || !wall_info.pixels) return;
-    scaled_wallpaper = (uint32_t*)malloc_custom(fb->framebuffer_width * fb->framebuffer_height * sizeof(uint32_t));
+    if (!wallpaper_data || !wall_info.pixels || !fb) return;
+    if (!scaled_wallpaper)
+        scaled_wallpaper = (uint32_t*)malloc_custom(fb->framebuffer_width * fb->framebuffer_height * sizeof(uint32_t));
+    
     for (uint32_t y = 0; y < fb->framebuffer_height; y++) {
         for (uint32_t x = 0; x < fb->framebuffer_width; x++) {
             int32_t abs_bmp_h = wall_info.height < 0 ? -wall_info.height : wall_info.height;
@@ -289,7 +309,35 @@ void precompute_scaled_wallpaper(struct multiboot_tag_framebuffer* fb) {
             scaled_wallpaper[y * fb->framebuffer_width + x] = (p[2] << 16) | (p[1] << 8) | p[0];
         }
     }
-    screen_backbuffer = (uint32_t*)malloc_custom(fb->framebuffer_width * fb->framebuffer_height * sizeof(uint32_t));
+    if (!screen_backbuffer)
+        screen_backbuffer = (uint32_t*)malloc_custom(fb->framebuffer_width * fb->framebuffer_height * sizeof(uint32_t));
+}
+
+static uint8_t* raw_wallpaper_buffer = 0;
+static uint32_t raw_wallpaper_buffer_size = 0;
+
+void set_wallpaper(const char* name) {
+    char path[512];
+    strcpy_custom(path, "Sysroot:/AnimOS/assets/wallpapers/");
+    strcat_custom(path, name);
+    
+    uint32_t size = vfs_get_file_size(path);
+    if (size == 0) return;
+
+    if (!raw_wallpaper_buffer || size > raw_wallpaper_buffer_size) {
+        raw_wallpaper_buffer = (uint8_t*)malloc_custom(size + 1);
+        raw_wallpaper_buffer_size = size;
+    }
+
+    if (raw_wallpaper_buffer && vfs_read_file(path, raw_wallpaper_buffer) == 0) {
+        raw_wallpaper_buffer[size] = 0;
+        wallpaper_data = raw_wallpaper_buffer;
+        init_wallpaper_info();
+        precompute_scaled_wallpaper(global_fb);
+        
+        // Update current_wallpaper in API
+        strcpy_custom(kernel_api.current_wallpaper, name);
+    }
 }
 
 uint32_t get_wallpaper_pixel_fast(uint32_t x, uint32_t y, struct multiboot_tag_framebuffer* fb) {
@@ -743,6 +791,7 @@ void init_kernel_api() {
     kernel_api.blit_buffer = blit_buffer;
     kernel_api.get_mouse_pos = get_mouse_pos; kernel_api.yield = kernel_yield;
     kernel_api.list_dir = vfs_list_dir;
+    kernel_api.set_wallpaper = set_wallpaper;
 
     get_cpu_brand(kernel_api.cpu_brand);
     
@@ -766,7 +815,7 @@ void init_kernel_api() {
 static uint8_t* preferences_bin_cache = 0; static uint32_t preferences_bin_size = 0;
 
 void run_app(const char* path, struct multiboot_tag_framebuffer* fb, app_event_t event) {
-    uint8_t* app_memory = (uint8_t*)0x2000000;
+    uint8_t* app_memory = (uint8_t*)0x8000000;
     if (!preferences_bin_cache) {
         uint32_t size = vfs_get_file_size(path); if (size == 0) return;
         preferences_bin_cache = (uint8_t*)malloc_custom(size); if (vfs_read_file(path, preferences_bin_cache) != 0) return;

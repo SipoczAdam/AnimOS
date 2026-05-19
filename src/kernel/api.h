@@ -26,6 +26,7 @@ typedef struct {
     void (*get_mouse_pos)(int32_t* mx, int32_t* my, uint8_t* clicked);
     void (*yield)();
     int (*list_dir)(const char* path, char* buffer, uint32_t max_size);
+    void (*set_wallpaper)(const char* name);
 
     // System Info
     char cpu_brand[49];

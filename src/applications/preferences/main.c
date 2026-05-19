@@ -218,6 +218,40 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                 }
             }
         }
+
+        // Content area hit test
+        if (selected_menu == 0) { // Wallpaper
+            uint32_t cx = sidebar_w + 40;
+            uint32_t cy = title_bar_h + 40;
+            uint32_t grid_y = cy + 60;
+            uint32_t item_w = 150;
+            uint32_t item_h = 40;
+            uint32_t w = fb->framebuffer_width;
+            uint32_t items_per_row = (w - sidebar_w - 60) / item_w;
+            if (items_per_row == 0) items_per_row = 1;
+
+            char* p = wallpaper_list;
+            int i = 0;
+            while (*p && i < 100) {
+                char name[256];
+                int k = 0;
+                while (*p && *p != '\n' && k < 255) name[k++] = *p++;
+                name[k] = 0;
+                if (*p == '\n') p++;
+
+                uint32_t row = i / items_per_row;
+                uint32_t col = i % items_per_row;
+                uint32_t ix = cx + col * item_w;
+                uint32_t iy = grid_y + row * (item_h + 10);
+                uint32_t box_w = item_w - 10;
+
+                if (mx >= (int32_t)ix && mx <= (int32_t)(ix + box_w) && my >= (int32_t)iy && my <= (int32_t)(iy + item_h)) {
+                    api->set_wallpaper(name);
+                    return;
+                }
+                i++;
+            }
+        }
     }
 
     if (event == APP_EVENT_INIT || event == APP_EVENT_TICK || event == APP_EVENT_CLICK) {
