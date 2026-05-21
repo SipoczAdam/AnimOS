@@ -308,8 +308,56 @@ void init_wallpaper_info() {
 
 void kernel_ui_refresh_simple() {
     if (!desktop_ready || !global_fb || !screen_backbuffer) return;
+    
+    // Save area under cursor from screen_backbuffer
+    int32_t cursor_saved_x = mouse_x;
+    int32_t cursor_saved_y = mouse_y;
+    int32_t cursor_saved_w = 0;
+    int32_t cursor_saved_h = 0;
+    
+    if (cursor_data) {
+        uint8_t* actual_cursor = cursor_data;
+        if (is_system_busy && working_cursor_data && working_frames_count > 0) {
+            actual_cursor = working_cursor_data + working_frames_offsets[current_working_frame];
+        }
+        uint8_t* dib = actual_cursor + 6 + 16;
+        struct bmp_info_header* bih = (struct bmp_info_header*)dib;
+        cursor_saved_w = bih->biWidth;
+        cursor_saved_h = bih->biHeight / 2;
+        if (cursor_saved_w > 64) cursor_saved_w = 64;
+        if (cursor_saved_h > 64) cursor_saved_h = 64;
+        
+        for (int32_t y = 0; y < cursor_saved_h; y++) {
+            for (int32_t x = 0; x < cursor_saved_w; x++) {
+                int32_t px = cursor_saved_x + x;
+                int32_t py = cursor_saved_y + y;
+                if (px >= 0 && px < (int32_t)screen_w && py >= 0 && py < (int32_t)screen_h) {
+                    cursor_buffer[y * cursor_saved_w + x] = screen_backbuffer[py * screen_w + px];
+                }
+            }
+        }
+    }
+
+    struct multiboot_tag_framebuffer back_fb = *global_fb;
+    back_fb.framebuffer_addr = (uint64_t)screen_backbuffer;
+    back_fb.framebuffer_pitch = global_fb->framebuffer_width * 4;
+    back_fb.framebuffer_bpp = 32;
+    
+    draw_cursor_simple(mouse_x, mouse_y, &back_fb);
+    
     blit_buffer(screen_backbuffer, global_fb);
-    draw_cursor_simple(mouse_x, mouse_y, global_fb);
+    
+    if (cursor_saved_w > 0 && cursor_saved_h > 0) {
+        for (int32_t y = 0; y < cursor_saved_h; y++) {
+            for (int32_t x = 0; x < cursor_saved_w; x++) {
+                int32_t px = cursor_saved_x + x;
+                int32_t py = cursor_saved_y + y;
+                if (px >= 0 && px < (int32_t)screen_w && py >= 0 && py < (int32_t)screen_h) {
+                    screen_backbuffer[py * screen_w + px] = cursor_buffer[y * cursor_saved_w + x];
+                }
+            }
+        }
+    }
 }
 
 static int32_t scaling_last_mx = -1;
@@ -990,9 +1038,53 @@ void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot
     if (dialog_state == 1) draw_dialog(&back_fb, "Restart", "Are you sure you want to restart the system?");
     else if (dialog_state == 2) draw_dialog(&back_fb, "Shutdown", "Are you sure you want to shutdown the system?");
     
-    // Blit clean backbuffer to physical screen first, then draw cursor on top of physical screen
+    // Save area under cursor from screen_backbuffer
+    int32_t cursor_saved_x = mouse_x;
+    int32_t cursor_saved_y = mouse_y;
+    int32_t cursor_saved_w = 0;
+    int32_t cursor_saved_h = 0;
+    
+    if (cursor_data) {
+        uint8_t* actual_cursor = cursor_data;
+        if (is_system_busy && working_cursor_data && working_frames_count > 0) {
+            actual_cursor = working_cursor_data + working_frames_offsets[current_working_frame];
+        }
+        uint8_t* dib = actual_cursor + 6 + 16;
+        struct bmp_info_header* bih = (struct bmp_info_header*)dib;
+        cursor_saved_w = bih->biWidth;
+        cursor_saved_h = bih->biHeight / 2;
+        if (cursor_saved_w > 64) cursor_saved_w = 64;
+        if (cursor_saved_h > 64) cursor_saved_h = 64;
+        
+        for (int32_t y = 0; y < cursor_saved_h; y++) {
+            for (int32_t x = 0; x < cursor_saved_w; x++) {
+                int32_t px = cursor_saved_x + x;
+                int32_t py = cursor_saved_y + y;
+                if (px >= 0 && px < (int32_t)screen_w && py >= 0 && py < (int32_t)screen_h) {
+                    cursor_buffer[y * cursor_saved_w + x] = screen_backbuffer[py * screen_w + px];
+                }
+            }
+        }
+    }
+
+    // Draw cursor onto the backbuffer so the blit is atomic and doesn't flicker/blink!
+    draw_cursor_simple(mouse_x, mouse_y, &back_fb);
+    
+    // Blit the double-buffered frame to the physical screen
     blit_buffer(screen_backbuffer, real_fb);
-    draw_cursor_simple(mouse_x, mouse_y, real_fb);
+    
+    // Restore the clean backbuffer background area under the cursor
+    if (cursor_saved_w > 0 && cursor_saved_h > 0) {
+        for (int32_t y = 0; y < cursor_saved_h; y++) {
+            for (int32_t x = 0; x < cursor_saved_w; x++) {
+                int32_t px = cursor_saved_x + x;
+                int32_t py = cursor_saved_y + y;
+                if (px >= 0 && px < (int32_t)screen_w && py >= 0 && py < (int32_t)screen_h) {
+                    screen_backbuffer[py * screen_w + px] = cursor_buffer[y * cursor_saved_w + x];
+                }
+            }
+        }
+    }
 }
 
 void redraw_desktop(struct multiboot_tag_framebuffer* fb) {
