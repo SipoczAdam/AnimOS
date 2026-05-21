@@ -45,6 +45,8 @@ uint32_t net_get_subnet() { return subnet_mask; }
 uint32_t net_get_gateway() { return gateway_ip; }
 uint32_t net_get_dns_primary() { return dns_primary; }
 uint32_t net_get_dns_secondary() { return dns_secondary; }
+const char* net_get_nic_name() { return "Intel E1000 Gigabit Ethernet"; }
+void net_get_mac(uint8_t* mac) { for(int i=0; i<6; i++) mac[i] = my_mac[i]; }
 int net_dhcp_ok() { return dhcp_ok; }
 
 void arp_request(uint32_t target_ip) {

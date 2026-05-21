@@ -913,6 +913,8 @@ void init_kernel_api() {
     kernel_api.net_get_gateway = net_get_gateway;
     kernel_api.net_get_dns_primary = net_get_dns_primary;
     kernel_api.net_get_dns_secondary = net_get_dns_secondary;
+    kernel_api.net_get_nic_name = net_get_nic_name;
+    kernel_api.net_get_mac = net_get_mac;
 
     get_cpu_brand(kernel_api.cpu_brand);
     

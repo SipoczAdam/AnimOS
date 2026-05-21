@@ -35,6 +35,16 @@ void ip_to_str(uint32_t ip, char* s) {
     s[pos] = 0;
 }
 
+void mac_to_str(uint8_t* mac, char* s) {
+    const char* hex = "0123456789ABCDEF";
+    for (int i = 0; i < 6; i++) {
+        s[i * 3] = hex[mac[i] >> 4];
+        s[i * 3 + 1] = hex[mac[i] & 0x0F];
+        if (i < 5) s[i * 3 + 2] = ':';
+    }
+    s[17] = 0;
+}
+
 int app_strcmp(const char* s1, const char* s2) {
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }
     return *(unsigned char*)s1 - *(unsigned char*)s2;
@@ -173,6 +183,19 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         // Secondary DNS
         api->draw_string_scaled(label_x, ly, "Secondary DNS:", 0x555555, 70, target_fb);
         ip_to_str(api->net_get_dns_secondary(), buf);
+        api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
+        ly += spacing + 15; // Extra space
+
+        // NIC Name
+        api->draw_string_scaled(label_x, ly, "Network Adapter:", 0x555555, 70, target_fb);
+        api->draw_string_scaled(value_x, ly, api->net_get_nic_name(), 0x333333, 70, target_fb);
+        ly += spacing;
+
+        // MAC Address
+        api->draw_string_scaled(label_x, ly, "MAC Address:", 0x555555, 70, target_fb);
+        uint8_t mac[6];
+        api->net_get_mac(mac);
+        mac_to_str(mac, buf);
         api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
     }  
     
