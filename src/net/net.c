@@ -4,6 +4,9 @@
 static uint32_t my_ip = 0;
 static uint8_t my_mac[6];
 static uint32_t gateway_ip = 0;
+static uint32_t subnet_mask = 0;
+static uint32_t dns_primary = 0;
+static uint32_t dns_secondary = 0;
 static uint8_t gateway_mac[6] = {0, 0, 0, 0, 0, 0};
 static uint32_t dhcp_server_ip = 0;
 static uint64_t last_ntp_timestamp = 0;
@@ -29,11 +32,19 @@ static uint16_t ip_checksum(void* vdata, size_t length) {
 
 void net_init(uint32_t ip) {
     my_ip = 0;
+    gateway_ip = 0;
+    subnet_mask = 0;
+    dns_primary = 0;
+    dns_secondary = 0;
     e1000_get_mac(my_mac);
     global_xid_counter += *(uint32_t*)(my_mac + 2);
 }
 
 uint32_t net_get_ip() { return my_ip; }
+uint32_t net_get_subnet() { return subnet_mask; }
+uint32_t net_get_gateway() { return gateway_ip; }
+uint32_t net_get_dns_primary() { return dns_primary; }
+uint32_t net_get_dns_secondary() { return dns_secondary; }
 int net_dhcp_ok() { return dhcp_ok; }
 
 void arp_request(uint32_t target_ip) {
@@ -214,6 +225,11 @@ void net_poll() {
                             if(*opt == 53) type = opt[2];
                             if(*opt == 54) server = *(uint32_t*)(opt + 2);
                             if(*opt == 3) gateway_ip = *(uint32_t*)(opt + 2);
+                            if(*opt == 1) subnet_mask = *(uint32_t*)(opt + 2);
+                            if(*opt == 6) {
+                                dns_primary = *(uint32_t*)(opt + 2);
+                                if (opt[1] >= 8) dns_secondary = *(uint32_t*)(opt + 6);
+                            }
                             opt += (opt[1] + 2);
                         }
                         if (type == 2) { 

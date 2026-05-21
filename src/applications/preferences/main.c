@@ -18,6 +18,23 @@ void app_itoa(uint32_t n, char* s) {
     for (int j = 0; j < i / 2; j++) { char c = s[j]; s[j] = s[i-1-j]; s[i-1-j] = c; }
 }
 
+void ip_to_str(uint32_t ip, char* s) {
+    if (ip == 0) {
+        s[0] = '0'; s[1] = '.'; s[2] = '0'; s[3] = '.'; s[4] = '0'; s[5] = '.'; s[6] = '0'; s[7] = 0;
+        return;
+    }
+    int pos = 0;
+    for (int i = 0; i < 4; i++) {
+        uint8_t part = (ip >> (i * 8)) & 0xFF;
+        char part_str[4];
+        app_itoa(part, part_str);
+        int j = 0;
+        while (part_str[j]) s[pos++] = part_str[j++];
+        if (i < 3) s[pos++] = '.';
+    }
+    s[pos] = 0;
+}
+
 int app_strcmp(const char* s1, const char* s2) {
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }
     return *(unsigned char*)s1 - *(unsigned char*)s2;
@@ -122,6 +139,41 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
 
     else if (selected_menu == 1) { // Network
         api->draw_string_scaled(cx, cy, "Network Settings", 0x222222, 90, target_fb);
+        
+        char buf[32];
+        uint32_t ly = cy + 60;
+        uint32_t label_x = cx;
+        uint32_t value_x = cx + 150;
+        uint32_t spacing = 35;
+
+        // IP Address
+        api->draw_string_scaled(label_x, ly, "IP Address:", 0x555555, 70, target_fb);
+        ip_to_str(api->net_get_ip(), buf);
+        api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
+        ly += spacing;
+
+        // Subnet Mask
+        api->draw_string_scaled(label_x, ly, "Subnet Mask:", 0x555555, 70, target_fb);
+        ip_to_str(api->net_get_subnet(), buf);
+        api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
+        ly += spacing;
+
+        // Gateway
+        api->draw_string_scaled(label_x, ly, "Gateway:", 0x555555, 70, target_fb);
+        ip_to_str(api->net_get_gateway(), buf);
+        api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
+        ly += spacing;
+
+        // Primary DNS
+        api->draw_string_scaled(label_x, ly, "Primary DNS:", 0x555555, 70, target_fb);
+        ip_to_str(api->net_get_dns_primary(), buf);
+        api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
+        ly += spacing;
+
+        // Secondary DNS
+        api->draw_string_scaled(label_x, ly, "Secondary DNS:", 0x555555, 70, target_fb);
+        ip_to_str(api->net_get_dns_secondary(), buf);
+        api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
     }  
     
     else if (selected_menu == 2) { // About

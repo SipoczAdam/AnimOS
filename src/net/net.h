@@ -72,6 +72,10 @@ void arp_request(uint32_t target_ip);
 void ntp_sync(uint32_t ntp_server_ip);
 uint64_t ntp_get_time();
 uint32_t net_get_ip();
+uint32_t net_get_subnet();
+uint32_t net_get_gateway();
+uint32_t net_get_dns_primary();
+uint32_t net_get_dns_secondary();
 int net_dhcp_ok();
 
 #endif

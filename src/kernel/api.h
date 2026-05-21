@@ -27,6 +27,11 @@ typedef struct {
     void (*yield)();
     int (*list_dir)(const char* path, char* buffer, uint32_t max_size);
     void (*set_wallpaper)(const char* name);
+    uint32_t (*net_get_ip)();
+    uint32_t (*net_get_subnet)();
+    uint32_t (*net_get_gateway)();
+    uint32_t (*net_get_dns_primary)();
+    uint32_t (*net_get_dns_secondary)();
 
     // System Info
     char cpu_brand[49];

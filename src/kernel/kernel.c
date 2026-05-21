@@ -908,6 +908,11 @@ void init_kernel_api() {
     kernel_api.get_mouse_pos = get_mouse_pos; kernel_api.yield = kernel_yield;
     kernel_api.list_dir = vfs_list_dir;
     kernel_api.set_wallpaper = set_wallpaper;
+    kernel_api.net_get_ip = net_get_ip;
+    kernel_api.net_get_subnet = net_get_subnet;
+    kernel_api.net_get_gateway = net_get_gateway;
+    kernel_api.net_get_dns_primary = net_get_dns_primary;
+    kernel_api.net_get_dns_secondary = net_get_dns_secondary;
 
     get_cpu_brand(kernel_api.cpu_brand);
     
