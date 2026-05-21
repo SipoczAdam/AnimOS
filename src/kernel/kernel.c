@@ -896,6 +896,8 @@ void init_kernel_api() {
     kernel_api.net_get_dns_secondary = net_get_dns_secondary;
     kernel_api.net_get_nic_name = net_get_nic_name;
     kernel_api.net_get_mac = net_get_mac;
+    kernel_api.net_get_last_sync_time = net_get_last_sync_time;
+    kernel_api.net_get_ntp_server = net_get_ntp_server;
 
     get_cpu_brand(kernel_api.cpu_brand);
     

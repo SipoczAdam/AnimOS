@@ -45,6 +45,22 @@ void mac_to_str(uint8_t* mac, char* s) {
     s[17] = 0;
 }
 
+void timestamp_to_str(uint64_t ts, char* s) {
+    if (ts == 0) {
+        s[0] = 'N'; s[1] = 'e'; s[2] = 'v'; s[3] = 'e'; s[4] = 'r'; s[5] = 0;
+        return;
+    }
+    uint32_t h = (ts / 3600) % 24;
+    uint32_t m = (ts / 60) % 60;
+    uint32_t sc = ts % 60;
+    h = (h + 2) % 24; // UTC+2
+    
+    int pos = 0;
+    s[pos++] = (h / 10) + '0'; s[pos++] = (h % 10) + '0'; s[pos++] = ':';
+    s[pos++] = (m / 10) + '0'; s[pos++] = (m % 10) + '0'; s[pos++] = ':';
+    s[pos++] = (sc / 10) + '0'; s[pos++] = (sc % 10) + '0'; s[pos] = 0;
+}
+
 int app_strcmp(const char* s1, const char* s2) {
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }
     return *(unsigned char*)s1 - *(unsigned char*)s2;
@@ -201,6 +217,27 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     
     else if (selected_menu == 2) { // Date & Time
         api->draw_string_scaled(cx, cy, "Date & Time", 0x222222, 90, target_fb);
+
+        char buf[32];
+        uint32_t ly = cy + 60;
+        uint32_t label_x = cx;
+        uint32_t value_x = cx + 180;
+        uint32_t spacing = 35;
+
+        // NTP Server
+        api->draw_string_scaled(label_x, ly, "NTP Server:", 0x555555, 70, target_fb);
+        api->draw_string_scaled(value_x, ly, api->net_get_ntp_server(), 0x333333, 70, target_fb);
+        ly += spacing;
+
+        // Timezone
+        api->draw_string_scaled(label_x, ly, "Timezone:", 0x555555, 70, target_fb);
+        api->draw_string_scaled(value_x, ly, "UTC+2 (Central European Summer Time)", 0x333333, 70, target_fb);
+        ly += spacing;
+
+        // Last Sync
+        api->draw_string_scaled(label_x, ly, "Last Sync:", 0x555555, 70, target_fb);
+        timestamp_to_str(api->net_get_last_sync_time(), buf);
+        api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
     }  
 
     else if (selected_menu == 3) { // About

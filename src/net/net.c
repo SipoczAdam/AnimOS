@@ -10,6 +10,7 @@ static uint32_t dns_secondary = 0;
 static uint8_t gateway_mac[6] = {0, 0, 0, 0, 0, 0};
 static uint32_t dhcp_server_ip = 0;
 static uint64_t last_ntp_timestamp = 0;
+static uint64_t last_sync_full_time = 0;
 static uint32_t global_xid_counter = 0x12345678;
 static uint32_t last_xid = 0;
 int received_any = 0;
@@ -248,6 +249,7 @@ void net_poll() {
                     struct ntp_packet* ntp = (struct ntp_packet*)(udp + 1);
                     if (swap32(ntp->trans_ts_sec) > 0) {
                         last_ntp_timestamp = (uint64_t)swap32(ntp->trans_ts_sec) - 2208988800ULL;
+                        last_sync_full_time = last_ntp_timestamp;
                         extern int net_status; net_status = 3;
                     }
                 }
@@ -257,3 +259,5 @@ void net_poll() {
 }
 
 uint64_t ntp_get_time() { return last_ntp_timestamp; }
+uint64_t net_get_last_sync_time() { return last_sync_full_time; }
+const char* net_get_ntp_server() { return "pool.ntp.org (automatic)"; }

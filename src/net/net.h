@@ -71,6 +71,8 @@ void net_poll();
 void arp_request(uint32_t target_ip);
 void ntp_sync(uint32_t ntp_server_ip);
 uint64_t ntp_get_time();
+uint64_t net_get_last_sync_time();
+const char* net_get_ntp_server();
 uint32_t net_get_ip();
 uint32_t net_get_subnet();
 uint32_t net_get_gateway();

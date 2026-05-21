@@ -34,6 +34,8 @@ typedef struct {
     uint32_t (*net_get_dns_secondary)();
     const char* (*net_get_nic_name)();
     void (*net_get_mac)(uint8_t* mac);
+    uint64_t (*net_get_last_sync_time)();
+    const char* (*net_get_ntp_server)();
 
     // System Info
     char cpu_brand[49];
