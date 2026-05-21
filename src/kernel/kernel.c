@@ -392,7 +392,7 @@ void kernel_ui_refresh_scaling() {
     // Advance working frame if busy (with speed divider)
     static uint32_t animation_speed_divider = 0;
     if (is_system_busy && working_frames_count > 0) {
-        if (animation_speed_divider++ % 3 == 0) {
+        if (animation_speed_divider++ % 2 == 0) {
             current_working_frame = (current_working_frame + 1) % working_frames_count;
         }
     }
