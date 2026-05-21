@@ -701,25 +701,6 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
     }
     uint8_t h, m; get_time(&h, &m); char time_str[6] = { (h/10)+'0', (h%10)+'0', ':', (m/10)+'0', (m%10)+'0', 0 };
     draw_string(dock_x + dock_w - 80, dock_y + 17, time_str, 0x333333, fb);
-    extern int received_any; const char* status_str = ""; uint32_t status_color = 0x555555;
-    if (net_status == 3) { status_str = "NTP OK"; status_color = 0x00AA00; }
-    else if (net_status == 7 || net_status == 8) { status_str = (net_status == 7) ? "DHCP..." : "DHCP REQ"; status_color = 0xAAAA00; }
-    else if (net_status == 2) { if (received_any) { status_str = "RECV ANY"; status_color = 0xAA00AA; } else { status_str = "SEND NTP"; status_color = 0xAAAA00; } }
-    else if (net_status == 1) { status_str = "LINK OK"; status_color = 0xAA0000; }
-    else if (net_status == 6) { status_str = "NO LINK"; status_color = 0xAA5500; }
-    else if (net_status == 4) { status_str = "UNKNOWN PCI"; status_color = 0x0000AA; }
-    else if (net_status == 5) { status_str = "PCI SCAN"; status_color = 0x777777; }
-    else { status_str = "NO NIC"; status_color = 0x555555; }
-    uint32_t status_x = dock_x + dock_w - 80 - get_string_width(status_str) - 20;
-    draw_string(status_x, dock_y + 17, status_str, status_color, fb);
-    if (net_dhcp_ok()) {
-        uint32_t ip = net_get_ip(); char ip_str[20]; int pos = 0;
-        for(int i=0; i<4; i++) {
-            uint8_t part = (ip >> (i*8)) & 0xFF; if(part >= 100) ip_str[pos++] = (part/100)+'0'; if(part >= 10) ip_str[pos++] = ((part/10)%10)+'0';
-            ip_str[pos++] = (part%10)+'0'; if(i < 3) ip_str[pos++] = '.';
-        }
-        ip_str[pos] = 0; draw_string(status_x - get_string_width(ip_str) - 30, dock_y + 17, ip_str, 0x333333, fb);
-    }
 }
 
 void draw_status_bar(struct multiboot_tag_framebuffer* fb) {
