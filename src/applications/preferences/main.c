@@ -68,8 +68,8 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     if (api->maximize_icon) api->draw_icon_scaled(max_x, max_y, max_size, max_size, api->maximize_icon, target_fb);
 
     // 5. Sidebar Menu Items
-    const char* menu_items[] = {"Wallpaper", "About"};
-    for (int i = 0; i < 2; i++) {
+    const char* menu_items[] = {"Wallpaper", "Network" ,"About"};
+    for (int i = 0; i < 3; i++) {
         uint32_t item_y = title_bar_h + 20 + (i * 40);
         if (i == selected_menu) {
             api->draw_rect(10, item_y - 10, sidebar_w - 20, 35, 0xE0E0E0, target_fb);
@@ -118,8 +118,13 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
             
             i++;
         }
-    } 
-    else if (selected_menu == 1) { // About
+    }
+
+    else if (selected_menu == 1) { // Network
+        api->draw_string_scaled(cx, cy, "Network Settings", 0x222222, 90, target_fb);
+    }  
+    
+    else if (selected_menu == 2) { // About
         api->draw_string_scaled(cx, cy, "About AnimOS", 0x222222, 90, target_fb);
         
         // Boot Logo - Centered between the actual end of text and the right window edge
