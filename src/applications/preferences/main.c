@@ -45,7 +45,7 @@ void mac_to_str(uint8_t* mac, char* s) {
     s[17] = 0;
 }
 
-void timestamp_to_str(uint64_t ts, char* s) {
+void timestamp_to_str(kernel_api_t* api, uint64_t ts, char* s) {
     if (ts == 0) {
         s[0] = 'N'; s[1] = 'e'; s[2] = 'v'; s[3] = 'e'; s[4] = 'r'; s[5] = 0;
         return;
@@ -53,7 +53,7 @@ void timestamp_to_str(uint64_t ts, char* s) {
     uint32_t h = (ts / 3600) % 24;
     uint32_t m = (ts / 60) % 60;
     uint32_t sc = ts % 60;
-    h = (h + 2) % 24; // UTC+2
+    h = (h + api->get_timezone_offset()) % 24;
     
     int pos = 0;
     s[pos++] = (h / 10) + '0'; s[pos++] = (h % 10) + '0'; s[pos++] = ':';
@@ -231,12 +231,12 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
 
         // Timezone
         api->draw_string_scaled(label_x, ly, "Timezone:", 0x555555, 70, target_fb);
-        api->draw_string_scaled(value_x, ly, "UTC+2 (Central European Summer Time)", 0x333333, 70, target_fb);
+        api->draw_string_scaled(value_x, ly, api->get_timezone(), 0x333333, 70, target_fb);
         ly += spacing;
 
         // Last Sync
         api->draw_string_scaled(label_x, ly, "Last Sync:", 0x555555, 70, target_fb);
-        timestamp_to_str(api->net_get_last_sync_time(), buf);
+        timestamp_to_str(api, api->net_get_last_sync_time(), buf);
         api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
     }  
 

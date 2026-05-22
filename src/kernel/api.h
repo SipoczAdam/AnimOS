@@ -36,6 +36,8 @@ typedef struct {
     void (*net_get_mac)(uint8_t* mac);
     uint64_t (*net_get_last_sync_time)();
     const char* (*net_get_ntp_server)();
+    const char* (*get_timezone)();
+    int (*get_timezone_offset)();
 
     // System Info
     char cpu_brand[49];

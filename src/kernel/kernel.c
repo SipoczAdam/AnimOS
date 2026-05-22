@@ -92,6 +92,9 @@ uint32_t preferences_window_buffer[1024 * 768];
 
 /* --- Forward Declarations --- */
 
+const char* kernel_get_timezone();
+int kernel_get_timezone_offset();
+
 void msleep(uint32_t ms);
 void* malloc_custom(uint32_t size);
 void draw_pixel(uint32_t x, uint32_t y, uint32_t color, struct multiboot_tag_framebuffer* fb);
@@ -222,9 +225,10 @@ void get_cpu_brand(char* brand) {
 
 void get_time(uint8_t* h, uint8_t* m) {
     uint64_t ntp_time = ntp_get_time();
+    int offset = kernel_get_timezone_offset();
     if (ntp_time != 0) {
         *h = (ntp_time / 3600) % 24; *m = (ntp_time / 60) % 60;
-        *h = (*h + 2) % 24; return;
+        *h = (*h + offset) % 24; return;
     }
     while (read_rtc_reg(0x0A) & 0x80);
     *m = read_rtc_reg(0x02); *h = read_rtc_reg(0x04);
@@ -234,7 +238,7 @@ void get_time(uint8_t* h, uint8_t* m) {
         *h = ((*h & 0x0F) + (((*h & 0x70) / 16) * 10)) | (*h & 0x80);
     }
     if (!(registerB & 0x02) && (*h & 0x80)) *h = ((*h & 0x7F) + 12) % 24;
-    if (is_qemu()) *h = (*h + 2) % 24;
+    if (is_qemu()) *h = (*h + offset) % 24;
 }
 
 /* --- Rendering Primitives --- */
@@ -878,6 +882,14 @@ void draw_rounded_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t 
     }
 }
 
+const char* kernel_get_timezone() {
+    return "UTC+2 (Central European Summer Time)";
+}
+
+int kernel_get_timezone_offset() {
+    return 2;
+}
+
 void init_kernel_api() {
     kernel_api.draw_pixel = draw_pixel; kernel_api.blend_colors = blend_colors; kernel_api.get_wallpaper_pixel = get_wallpaper_pixel_fast;
     kernel_api.draw_string_scaled = draw_string_scaled; kernel_api.get_string_width_scaled = get_string_width_scaled; kernel_api.draw_icon_scaled = draw_icon_scaled;
@@ -898,6 +910,8 @@ void init_kernel_api() {
     kernel_api.net_get_mac = net_get_mac;
     kernel_api.net_get_last_sync_time = net_get_last_sync_time;
     kernel_api.net_get_ntp_server = net_get_ntp_server;
+    kernel_api.get_timezone = kernel_get_timezone;
+    kernel_api.get_timezone_offset = kernel_get_timezone_offset;
 
     get_cpu_brand(kernel_api.cpu_brand);
     
