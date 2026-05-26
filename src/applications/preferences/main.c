@@ -11,6 +11,7 @@ static char wallpaper_list[1024];
 static int wallpaper_count = 0;
 static int selected_tz = 0;
 static int tz_dropdown_open = 0;
+static int tz_scroll_offset = 0;
 
 void app_itoa(uint32_t n, char* s) {
     int i = 0;
@@ -281,19 +282,37 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
 
         if (tz_dropdown_open) {
             uint32_t drop_y = ly - 8 + box_h;
-            uint32_t drop_h = tz_count * box_h; 
+            uint32_t max_visible = 6;
+            if (drop_y + (tz_count * box_h) > h - 20) {
+                 max_visible = (h - 20 - drop_y) / box_h;
+            }
+            if (max_visible < 2) max_visible = 2;
+            if (max_visible > (uint32_t)tz_count) max_visible = (uint32_t)tz_count;
+
+            uint32_t drop_h = max_visible * box_h; 
             api->draw_rect(value_x, drop_y, box_w, drop_h, 0xFFFFFF, target_fb);
             api->draw_rect(value_x, drop_y, box_w, 1, 0xCCCCCC, target_fb); // Top border
             api->draw_rect(value_x, drop_y + drop_h - 1, box_w, 1, 0xCCCCCC, target_fb); // Bottom
             api->draw_rect(value_x, drop_y, 1, drop_h, 0xCCCCCC, target_fb); // Left
             api->draw_rect(value_x + box_w - 1, drop_y, 1, drop_h, 0xCCCCCC, target_fb); // Right
             
-            for (int i = 0; i < tz_count; i++) {
+            // Scrollbar background
+            if ((uint32_t)tz_count > max_visible) {
+                api->draw_rect(value_x + box_w - 12, drop_y + 1, 11, drop_h - 2, 0xF0F0F0, target_fb);
+                uint32_t thumb_h = (max_visible * (drop_h - 2)) / tz_count;
+                uint32_t thumb_y = drop_y + 1 + (tz_scroll_offset * (drop_h - 2 - thumb_h)) / (tz_count - max_visible);
+                api->draw_rect(value_x + box_w - 11, thumb_y, 9, thumb_h, 0xBBBBBB, target_fb);
+            }
+
+            for (uint32_t i = 0; i < max_visible; i++) {
+                uint32_t idx = i + tz_scroll_offset;
+                if (idx >= (uint32_t)tz_count) break;
+                
                 uint32_t item_y = drop_y + (i * box_h);
-                if (i == selected_tz) {
-                    api->draw_rect(value_x + 1, item_y + 1, box_w - 2, box_h - 2, 0xE0E0E0, target_fb);
+                if (idx == (uint32_t)selected_tz) {
+                    api->draw_rect(value_x + 1, item_y + 1, box_w - ((uint32_t)tz_count > max_visible ? 13 : 2), box_h - 2, 0xE0E0E0, target_fb);
                 }
-                api->draw_string_scaled(value_x + 10, item_y + 8, tz_names[i], 0x333333, 70, target_fb);
+                api->draw_string_scaled(value_x + 10, item_y + 8, tz_names[idx], 0x333333, 70, target_fb);
             }
         }
     }  
@@ -443,11 +462,30 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
 
             if (tz_dropdown_open) {
                 uint32_t drop_y = ly - 8 + box_h;
+                uint32_t h = fb->framebuffer_height;
+                uint32_t max_visible = 6;
+                if (drop_y + (10 * box_h) > h - 20) {
+                     max_visible = (h - 20 - drop_y) / box_h;
+                }
+                if (max_visible < 2) max_visible = 2;
+                if (max_visible > 10) max_visible = 10;
+                uint32_t drop_h = max_visible * box_h;
+
+                // Scrollbar click
+                if (10 > max_visible && mx >= (int32_t)(value_x + box_w - 12) && mx <= (int32_t)(value_x + box_w)) {
+                    if (my < (int32_t)(drop_y + drop_h / 2)) {
+                        if (tz_scroll_offset > 0) tz_scroll_offset--;
+                    } else {
+                        if (tz_scroll_offset < (int)(10 - max_visible)) tz_scroll_offset++;
+                    }
+                    return;
+                }
+
                 if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w)) {
-                    for (int i = 0; i < 10; i++) {
+                    for (uint32_t i = 0; i < max_visible; i++) {
                         uint32_t item_y = drop_y + (i * box_h);
                         if (my >= (int32_t)item_y && my <= (int32_t)(item_y + box_h)) {
-                            selected_tz = i;
+                            selected_tz = i + tz_scroll_offset;
                             tz_dropdown_open = 0;
                             return;
                         }
@@ -483,3 +521,4 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         }
     }
 }
+
