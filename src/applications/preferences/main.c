@@ -9,6 +9,7 @@ static uint32_t btn_size = 22;
 static int selected_menu = 0;
 static char wallpaper_list[1024];
 static int wallpaper_count = 0;
+static int selected_tz = 0;
 
 void app_itoa(uint32_t n, char* s) {
     int i = 0;
@@ -243,6 +244,27 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         api->draw_rect(cx, ly, w - cx - 40, 1, 0xDDDDDD, target_fb); // Separator line
         ly += 25;
         api->draw_string_scaled(label_x, ly, "Set Timezone Manually", 0x333333, 80, target_fb);
+
+        ly += 45;
+        api->draw_string_scaled(label_x, ly, "Timezone:", 0x555555, 70, target_fb);
+        
+        uint32_t box_w = 220;
+        uint32_t box_h = 32;
+        api->draw_rounded_rect(value_x, ly - 8, box_w, box_h, 4, 0xFFFFFF, target_fb);
+        api->draw_rect(value_x, ly - 8, box_w, 1, 0xCCCCCC, target_fb); // Top
+        api->draw_rect(value_x, ly + box_h - 9, box_w, 1, 0xCCCCCC, target_fb); // Bottom
+        api->draw_rect(value_x, ly - 8, 1, box_h, 0xCCCCCC, target_fb); // Left
+        api->draw_rect(value_x + box_w - 1, ly - 8, 1, box_h, 0xCCCCCC, target_fb); // Right
+
+        const char* tz_names[] = {"NTP (Automatic)", "UTC", "GMT+1 (Budapest)", "GMT+2"};
+        api->draw_string_scaled(value_x + 10, ly, tz_names[selected_tz], 0x333333, 70, target_fb);
+
+        // Arrow icon (small triangle)
+        uint32_t arrow_x = value_x + box_w - 20;
+        uint32_t arrow_y = ly + 4;
+        for (int i = 0; i < 4; i++) {
+            api->draw_rect(arrow_x + i, arrow_y + i, (4 - i) * 2, 1, 0x666666, target_fb);
+        }
     }  
 
     else if (selected_menu == 3) { // About
@@ -376,6 +398,20 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                     return;
                 }
                 i++;
+            }
+        }
+
+        if (selected_menu == 2) { // Date & Time
+            uint32_t cx = sidebar_w + 40;
+            uint32_t cy = title_bar_h + 40;
+            uint32_t ly = cy + 60 + (35 * 3) + 10 + 25 + 45; // Calculate ly same as in render
+            uint32_t value_x = cx + 180;
+            uint32_t box_w = 220;
+            uint32_t box_h = 32;
+
+            if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ly - 8) && my <= (int32_t)(ly - 8 + box_h)) {
+                selected_tz = (selected_tz + 1) % 4; // Cycle through 4 options
+                return;
             }
         }
     }
