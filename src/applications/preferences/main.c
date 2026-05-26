@@ -257,7 +257,19 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         api->draw_rect(value_x, ly - 8, 1, box_h, 0xCCCCCC, target_fb); // Left
         api->draw_rect(value_x + box_w - 1, ly - 8, 1, box_h, 0xCCCCCC, target_fb); // Right
 
-        const char* tz_names[] = {"NTP (Automatic)", "UTC", "GMT+1 (Budapest)", "GMT+2"};
+        const char* tz_names[] = {
+            "NTP (Automatic)",
+            "UTC (Universal Time)",
+            "GMT+0 (London, Lisbon)",
+            "GMT+1 (Budapest, Paris)",
+            "GMT+2 (Athens, Cairo)",
+            "GMT+3 (Moscow, Riyadh)",
+            "GMT+8 (Beijing, HK)",
+            "GMT+9 (Tokyo, Seoul)",
+            "GMT-5 (New York, Miami)",
+            "GMT-8 (LA, Seattle)"
+        };
+        int tz_count = 10;
         api->draw_string_scaled(value_x + 10, ly, tz_names[selected_tz], 0x333333, 70, target_fb);
 
         // Arrow icon (small triangle)
@@ -269,14 +281,14 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
 
         if (tz_dropdown_open) {
             uint32_t drop_y = ly - 8 + box_h;
-            uint32_t drop_h = 4 * box_h; 
+            uint32_t drop_h = tz_count * box_h; 
             api->draw_rect(value_x, drop_y, box_w, drop_h, 0xFFFFFF, target_fb);
             api->draw_rect(value_x, drop_y, box_w, 1, 0xCCCCCC, target_fb); // Top border
             api->draw_rect(value_x, drop_y + drop_h - 1, box_w, 1, 0xCCCCCC, target_fb); // Bottom
             api->draw_rect(value_x, drop_y, 1, drop_h, 0xCCCCCC, target_fb); // Left
             api->draw_rect(value_x + box_w - 1, drop_y, 1, drop_h, 0xCCCCCC, target_fb); // Right
             
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < tz_count; i++) {
                 uint32_t item_y = drop_y + (i * box_h);
                 if (i == selected_tz) {
                     api->draw_rect(value_x + 1, item_y + 1, box_w - 2, box_h - 2, 0xE0E0E0, target_fb);
@@ -432,7 +444,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             if (tz_dropdown_open) {
                 uint32_t drop_y = ly - 8 + box_h;
                 if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w)) {
-                    for (int i = 0; i < 4; i++) {
+                    for (int i = 0; i < 10; i++) {
                         uint32_t item_y = drop_y + (i * box_h);
                         if (my >= (int32_t)item_y && my <= (int32_t)(item_y + box_h)) {
                             selected_tz = i;
