@@ -38,6 +38,7 @@ typedef struct {
     const char* (*net_get_ntp_server)();
     const char* (*get_timezone)();
     int (*get_timezone_offset)();
+    void (*set_timezone_offset)(int offset);
 
     // System Info
     char cpu_brand[49];

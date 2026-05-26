@@ -489,6 +489,10 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                             if (my >= (int32_t)item_y && my <= (int32_t)(item_y + box_h)) {
                                 selected_tz = i + tz_scroll_offset;
                                 tz_dropdown_open = 0;
+                                
+                                // Apply timezone
+                                int offsets[] = {-999, 0, 0, 1, 2, 3, 8, 9, -5, -8};
+                                api->set_timezone_offset(offsets[selected_tz]);
                                 return;
                             }
                         }

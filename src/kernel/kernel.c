@@ -884,12 +884,36 @@ void draw_rounded_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t 
     }
 }
 
+static int current_timezone_offset = 2; 
+static int ntp_automatic_mode = 1;
+
+void set_timezone_offset(int offset) {
+    if (offset == -999) { 
+        ntp_automatic_mode = 1;
+        current_timezone_offset = 2; 
+    } else {
+        ntp_automatic_mode = 0;
+        current_timezone_offset = offset;
+    }
+}
+
 const char* kernel_get_timezone() {
-    return "UTC+2 (Central European Summer Time)";
+    if (ntp_automatic_mode) return "NTP (Automatic)";
+    static char tz_buf[16];
+    if (current_timezone_offset >= 0) {
+        tz_buf[0] = 'G'; tz_buf[1] = 'M'; tz_buf[2] = 'T'; tz_buf[3] = '+';
+        int off = current_timezone_offset;
+        tz_buf[4] = (off / 10) + '0'; tz_buf[5] = (off % 10) + '0'; tz_buf[6] = 0;
+    } else {
+        tz_buf[0] = 'G'; tz_buf[1] = 'M'; tz_buf[2] = 'T'; tz_buf[3] = '-';
+        int off = -current_timezone_offset;
+        tz_buf[4] = (off / 10) + '0'; tz_buf[5] = (off % 10) + '0'; tz_buf[6] = 0;
+    }
+    return tz_buf;
 }
 
 int kernel_get_timezone_offset() {
-    return 2;
+    return current_timezone_offset;
 }
 
 void init_kernel_api() {
@@ -914,6 +938,7 @@ void init_kernel_api() {
     kernel_api.net_get_ntp_server = net_get_ntp_server;
     kernel_api.get_timezone = kernel_get_timezone;
     kernel_api.get_timezone_offset = kernel_get_timezone_offset;
+    kernel_api.set_timezone_offset = set_timezone_offset;
 
     get_cpu_brand(kernel_api.cpu_brand);
     
