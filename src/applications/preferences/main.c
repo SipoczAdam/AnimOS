@@ -238,6 +238,11 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         api->draw_string_scaled(label_x, ly, "Last Sync:", 0x555555, 70, target_fb);
         timestamp_to_str(api, api->net_get_last_sync_time(), buf);
         api->draw_string_scaled(value_x, ly, buf, 0x333333, 70, target_fb);
+
+        ly += spacing + 10;
+        api->draw_rect(cx, ly, w - cx - 40, 1, 0xDDDDDD, target_fb); // Separator line
+        ly += 25;
+        api->draw_string_scaled(label_x, ly, "Set Timezone Manually", 0x333333, 80, target_fb);
     }  
 
     else if (selected_menu == 3) { // About
