@@ -224,22 +224,78 @@ void get_cpu_brand(char* brand) {
     }
 }
 
+struct tm_custom {
+    int sec, min, hour, mday, mon, year, wday;
+};
+
+void unix_to_tm(uint64_t ts, struct tm_custom* t) {
+    t->sec = ts % 60;
+    t->min = (ts / 60) % 60;
+    t->hour = (ts / 3600) % 24;
+    uint32_t days = ts / 86400;
+    t->wday = (days + 4) % 7;
+    int y = 1970;
+    while (1) {
+        int diy = (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) ? 366 : 365;
+        if (days < (uint32_t)diy) break;
+        days -= diy; y++;
+    }
+    t->year = y;
+    int m_days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) m_days[1] = 29;
+    int m = 0;
+    while (days >= (uint32_t)m_days[m]) { days -= m_days[m]; m++; }
+    t->mon = m + 1; t->mday = days + 1;
+}
+
+int is_dst_eu(int y, int m, int d, int h) {
+    if (m < 3 || m > 10) return 0;
+    if (m > 3 && m < 10) return 1;
+    // Last Sunday of March
+    int last_sun_march = 31 - ((5 * y / 4 + 4) % 7);
+    if (m == 3) return (d > last_sun_march || (d == last_sun_march && h >= 1));
+    // Last Sunday of October
+    int last_sun_oct = 31 - ((5 * y / 4 + 1) % 7);
+    if (m == 10) return (d < last_sun_oct || (d == last_sun_oct && h < 1));
+    return 0;
+}
+
+int is_dst_us(int y, int m, int d, int h) {
+    if (m < 3 || m > 11) return 0;
+    if (m > 3 && m < 11) return 1;
+    // Second Sunday of March
+    int second_sun_march = 14 - ((5 * y / 4 + 1) % 7);
+    if (m == 3) return (d > second_sun_march || (d == second_sun_march && h >= 2));
+    // First Sunday of November
+    int first_sun_nov = 7 - ((5 * y / 4 + 1) % 7);
+    if (m == 11) return (d < first_sun_nov || (d == first_sun_nov && h < 2));
+    return 0;
+}
+
 void get_time(uint8_t* h, uint8_t* m) {
     uint64_t ntp_time = ntp_get_time();
-    int offset = kernel_get_timezone_offset();
+    int offset = kernel_get_timezone_offset(); // This already includes DST
+
     if (ntp_time != 0) {
-        *h = (ntp_time / 3600) % 24; *m = (ntp_time / 60) % 60;
-        *h = (*h + offset) % 24; return;
+        struct tm_custom t;
+        unix_to_tm(ntp_time, &t);
+        *h = (t.hour + offset + 24) % 24;
+        *m = t.min;
+        return;
     }
-    while (read_rtc_reg(0x0A) & 0x80);
-    *m = read_rtc_reg(0x02); *h = read_rtc_reg(0x04);
+
+    // RTC Fallback
+    *m = read_rtc_reg(0x02);
+    *h = read_rtc_reg(0x04);
     uint8_t registerB = read_rtc_reg(0x0B);
     if (!(registerB & 0x04)) {
         *m = (*m & 0x0F) + ((*m / 16) * 10);
         *h = ((*h & 0x0F) + (((*h & 0x70) / 16) * 10)) | (*h & 0x80);
     }
     if (!(registerB & 0x02) && (*h & 0x80)) *h = ((*h & 0x7F) + 12) % 24;
-    if (is_qemu()) *h = (*h + offset) % 24;
+    
+    // Apply unified offset (base + DST)
+    *h = (*h + offset + 24) % 24;
 }
 
 /* --- Rendering Primitives --- */
@@ -884,13 +940,13 @@ void draw_rounded_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t 
     }
 }
 
-static int current_timezone_offset = 2; 
+static int current_timezone_offset = 1;
 static int ntp_automatic_mode = 1;
 
 void set_timezone_offset(int offset) {
     if (offset == -999) { 
         ntp_automatic_mode = 1;
-        current_timezone_offset = 2; 
+        current_timezone_offset = 1; // Default to GMT+1 (Budapest/Paris base)
     } else {
         ntp_automatic_mode = 0;
         current_timezone_offset = offset;
@@ -912,10 +968,46 @@ const char* kernel_get_timezone() {
     return tz_buf;
 }
 
-int kernel_get_timezone_offset() {
-    return current_timezone_offset;
-}
+static int last_dst_check_hour = -1;
+static int cached_dst = 0;
 
+int kernel_get_timezone_offset() {
+    int offset = current_timezone_offset;
+    uint64_t ntp_time = ntp_get_time();
+    int year, mon, day, hour;
+
+    if (ntp_time != 0) {
+        struct tm_custom t;
+        unix_to_tm(ntp_time, &t);
+        year = t.year; mon = t.mon; day = t.mday; hour = t.hour;
+    } else {
+        if (read_rtc_reg(0x0A) & 0x80) return offset + cached_dst;
+        hour = read_rtc_reg(0x04);
+        day = read_rtc_reg(0x07);
+        mon = read_rtc_reg(0x08);
+        int y_b = read_rtc_reg(0x09);
+        uint8_t regB = read_rtc_reg(0x0B);
+        if (!(regB & 0x04)) {
+            hour = ((hour & 0x0F) + (((hour & 0x70) / 16) * 10)) | (hour & 0x80);
+            day = (day & 0x0F) + ((day / 16) * 10);
+            mon = (mon & 0x0F) + ((mon / 16) * 10);
+            y_b = (y_b & 0x0F) + ((y_b / 16) * 10);
+        }
+        if (!(regB & 0x02) && (hour & 0x80)) hour = ((hour & 0x7F) + 12) % 24;
+        year = 2000 + y_b;
+    }
+
+    if (hour != last_dst_check_hour) {
+        last_dst_check_hour = hour;
+        cached_dst = 0;
+        if (offset == 0 || offset == 1 || offset == 2) {
+            if (is_dst_eu(year, mon, day, hour)) cached_dst = 1;
+        } else if (offset == -5 || offset == -8) {
+            if (is_dst_us(year, mon, day, hour)) cached_dst = 1;
+        }
+    }
+    return offset + cached_dst;
+}
 void init_kernel_api() {
     kernel_api.draw_pixel = draw_pixel; kernel_api.blend_colors = blend_colors; kernel_api.get_wallpaper_pixel = get_wallpaper_pixel_fast;
     kernel_api.draw_string_scaled = draw_string_scaled; kernel_api.get_string_width_scaled = get_string_width_scaled; kernel_api.draw_icon_scaled = draw_icon_scaled;
