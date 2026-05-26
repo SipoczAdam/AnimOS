@@ -390,115 +390,144 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         api->list_dir("Sysroot:/AnimOS/assets/wallpapers", wallpaper_list, 1024);
     }
 
-    if (event == APP_EVENT_CLICK) {
-        int32_t mx, my; uint8_t clicked;
-        api->get_mouse_pos(&mx, &my, &clicked);
+    if (event == APP_EVENT_CLICK || event == APP_EVENT_TICK) {
+        int32_t mx, my, wheel; uint8_t clicked;
+        api->get_mouse_pos(&mx, &my, &clicked, &wheel);
         
-        // Window Buttons Hit Test
-        uint32_t close_size = 22;
-        uint32_t max_size = 24;
-        
-        uint32_t close_x = fb->framebuffer_width - close_size - 12;
-        uint32_t max_x = close_x - max_size - 8;
-        uint32_t max_y = (title_bar_h - max_size) / 2;
-        
-        if (mx >= (int32_t)max_x && mx <= (int32_t)(max_x + max_size) && my >= (int32_t)max_y && my <= (int32_t)(max_y + max_size)) {
-            api->window_maximized = !api->window_maximized;
-            return;
-        }
+        if (event == APP_EVENT_CLICK) {
+            // Window Buttons Hit Test
+            uint32_t close_size = 22;
+            uint32_t max_size = 24;
+            
+            uint32_t close_x = fb->framebuffer_width - close_size - 12;
+            uint32_t max_x = close_x - max_size - 8;
+            uint32_t max_y = (title_bar_h - max_size) / 2;
+            
+            if (mx >= (int32_t)max_x && mx <= (int32_t)(max_x + max_size) && my >= (int32_t)max_y && my <= (int32_t)(max_y + max_size)) {
+                api->window_maximized = !api->window_maximized;
+                return;
+            }
 
-        // Sidebar area hit test
-        if (mx >= 0 && mx <= (int32_t)sidebar_w && my >= (int32_t)title_bar_h) {
-            for (int i = 0; i < 4; i++) {
-                uint32_t item_y = title_bar_h + 20 + (i * 40);
-                if (my >= (int32_t)(item_y - 10) && my <= (int32_t)(item_y + 25)) {
-                    selected_menu = i;
+            // Sidebar area hit test
+            if (mx >= 0 && mx <= (int32_t)sidebar_w && my >= (int32_t)title_bar_h) {
+                for (int i = 0; i < 4; i++) {
+                    uint32_t item_y = title_bar_h + 20 + (i * 40);
+                    if (my >= (int32_t)(item_y - 10) && my <= (int32_t)(item_y + 25)) {
+                        selected_menu = i;
+                        tz_dropdown_open = 0;
+                        tz_scroll_offset = 0;
+                    }
+                }
+            }
+
+            // Content area hit test
+            if (selected_menu == 0) { // Wallpaper
+                uint32_t cx = sidebar_w + 40;
+                uint32_t cy = title_bar_h + 40;
+                uint32_t grid_y = cy + 60;
+                uint32_t item_w = 150;
+                uint32_t item_h = 40;
+                uint32_t w = fb->framebuffer_width;
+                uint32_t items_per_row = (w - sidebar_w - 60) / item_w;
+                if (items_per_row == 0) items_per_row = 1;
+
+                char* p = wallpaper_list;
+                int i = 0;
+                while (*p && i < 100) {
+                    char name[256];
+                    int k = 0;
+                    while (*p && *p != '\n' && k < 255) name[k++] = *p++;
+                    name[k] = 0;
+                    if (*p == '\n') p++;
+
+                    uint32_t row = i / items_per_row;
+                    uint32_t col = i % items_per_row;
+                    uint32_t ix = cx + col * item_w;
+                    uint32_t iy = grid_y + row * (item_h + 10);
+                    uint32_t box_w = item_w - 10;
+
+                    if (mx >= (int32_t)ix && mx <= (int32_t)(ix + box_w) && my >= (int32_t)iy && my <= (int32_t)(iy + item_h)) {
+                        api->set_wallpaper(name);
+                        return;
+                    }
+                    i++;
+                }
+            }
+
+            if (selected_menu == 2) { // Date & Time
+                uint32_t cx = sidebar_w + 40;
+                uint32_t cy = title_bar_h + 40;
+                uint32_t ly = cy + 60 + (35 * 3) + 10 + 25 + 45; 
+                uint32_t value_x = cx + 180;
+                uint32_t box_w = 220;
+                uint32_t box_h = 32;
+
+                if (tz_dropdown_open) {
+                    uint32_t drop_y = ly - 8 + box_h;
+                    uint32_t h_win = fb->framebuffer_height;
+                    uint32_t max_visible = 6;
+                    if (drop_y + (10 * box_h) > h_win - 20) {
+                         max_visible = (h_win - 20 - drop_y) / box_h;
+                    }
+                    if (max_visible < 2) max_visible = 2;
+                    if (max_visible > 10) max_visible = 10;
+                    uint32_t drop_h = max_visible * box_h;
+
+                    // Scrollbar click
+                    if (10 > max_visible && mx >= (int32_t)(value_x + box_w - 12) && mx <= (int32_t)(value_x + box_w)) {
+                        if (my < (int32_t)(drop_y + drop_h / 2)) {
+                            if (tz_scroll_offset > 0) tz_scroll_offset--;
+                        } else {
+                            if (tz_scroll_offset < (int)(10 - max_visible)) tz_scroll_offset++;
+                        }
+                        return;
+                    }
+
+                    if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w)) {
+                        for (uint32_t i = 0; i < max_visible; i++) {
+                            uint32_t item_y = drop_y + (i * box_h);
+                            if (my >= (int32_t)item_y && my <= (int32_t)(item_y + box_h)) {
+                                selected_tz = i + tz_scroll_offset;
+                                tz_dropdown_open = 0;
+                                return;
+                            }
+                        }
+                    }
                     tz_dropdown_open = 0;
+                    if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ly - 8) && my <= (int32_t)(ly - 8 + box_h)) {
+                       return; 
+                    }
+                } else {
+                    if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ly - 8) && my <= (int32_t)(ly - 8 + box_h)) {
+                        tz_dropdown_open = 1;
+                        return;
+                    }
                 }
             }
         }
 
-        // Content area hit test
-        if (selected_menu == 0) { // Wallpaper
-            uint32_t cx = sidebar_w + 40;
-            uint32_t cy = title_bar_h + 40;
-            uint32_t grid_y = cy + 60;
-            uint32_t item_w = 150;
-            uint32_t item_h = 40;
-            uint32_t w = fb->framebuffer_width;
-            uint32_t items_per_row = (w - sidebar_w - 60) / item_w;
-            if (items_per_row == 0) items_per_row = 1;
-
-            char* p = wallpaper_list;
-            int i = 0;
-            while (*p && i < 100) {
-                char name[256];
-                int k = 0;
-                while (*p && *p != '\n' && k < 255) name[k++] = *p++;
-                name[k] = 0;
-                if (*p == '\n') p++;
-
-                uint32_t row = i / items_per_row;
-                uint32_t col = i % items_per_row;
-                uint32_t ix = cx + col * item_w;
-                uint32_t iy = grid_y + row * (item_h + 10);
-                uint32_t box_w = item_w - 10;
-
-                if (mx >= (int32_t)ix && mx <= (int32_t)(ix + box_w) && my >= (int32_t)iy && my <= (int32_t)(iy + item_h)) {
-                    api->set_wallpaper(name);
-                    return;
-                }
-                i++;
-            }
-        }
-
-        if (selected_menu == 2) { // Date & Time
+        // Mouse wheel handling for timezone dropdown
+        if (selected_menu == 2 && tz_dropdown_open && wheel != 0) {
             uint32_t cx = sidebar_w + 40;
             uint32_t cy = title_bar_h + 40;
             uint32_t ly = cy + 60 + (35 * 3) + 10 + 25 + 45; 
             uint32_t value_x = cx + 180;
             uint32_t box_w = 220;
             uint32_t box_h = 32;
+            uint32_t drop_y = ly - 8 + box_h;
+            uint32_t h_win = fb->framebuffer_height;
+            uint32_t max_visible = 6;
+            if (drop_y + (10 * box_h) > h_win - 20) max_visible = (h_win - 20 - drop_y) / box_h;
+            if (max_visible < 2) max_visible = 2;
+            if (max_visible > 10) max_visible = 10;
 
-            if (tz_dropdown_open) {
-                uint32_t drop_y = ly - 8 + box_h;
-                uint32_t h = fb->framebuffer_height;
-                uint32_t max_visible = 6;
-                if (drop_y + (10 * box_h) > h - 20) {
-                     max_visible = (h - 20 - drop_y) / box_h;
-                }
-                if (max_visible < 2) max_visible = 2;
-                if (max_visible > 10) max_visible = 10;
-                uint32_t drop_h = max_visible * box_h;
-
-                // Scrollbar click
-                if (10 > max_visible && mx >= (int32_t)(value_x + box_w - 12) && mx <= (int32_t)(value_x + box_w)) {
-                    if (my < (int32_t)(drop_y + drop_h / 2)) {
-                        if (tz_scroll_offset > 0) tz_scroll_offset--;
-                    } else {
-                        if (tz_scroll_offset < (int)(10 - max_visible)) tz_scroll_offset++;
-                    }
-                    return;
-                }
-
-                if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w)) {
-                    for (uint32_t i = 0; i < max_visible; i++) {
-                        uint32_t item_y = drop_y + (i * box_h);
-                        if (my >= (int32_t)item_y && my <= (int32_t)(item_y + box_h)) {
-                            selected_tz = i + tz_scroll_offset;
-                            tz_dropdown_open = 0;
-                            return;
-                        }
-                    }
-                }
-                tz_dropdown_open = 0;
-                if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ly - 8) && my <= (int32_t)(ly - 8 + box_h)) {
-                   return; 
-                }
-            } else {
-                if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ly - 8) && my <= (int32_t)(ly - 8 + box_h)) {
-                    tz_dropdown_open = 1;
-                    return;
+            // Check if mouse is over dropdown
+            if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && 
+                my >= (int32_t)(ly - 8) && my <= (int32_t)(drop_y + max_visible * box_h)) {
+                if (wheel > 0) {
+                    if (tz_scroll_offset > 0) tz_scroll_offset--;
+                } else {
+                    if (tz_scroll_offset < (int)(10 - max_visible)) tz_scroll_offset++;
                 }
             }
         }

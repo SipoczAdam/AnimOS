@@ -82,6 +82,7 @@ volatile int32_t mouse_x = 512, mouse_y = 384;
 
 volatile uint8_t mouse_left_button = 0;
 volatile uint8_t mouse_clicked = 0;
+volatile int32_t mouse_wheel = 0;
 volatile int power_menu_open = 0;
 volatile int power_menu_progress = 0;
 
@@ -824,8 +825,9 @@ void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const 
 
 /* --- Window and App Management --- */
 
-void get_mouse_pos(int32_t* mx, int32_t* my, uint8_t* clicked) { 
+void get_mouse_pos(int32_t* mx, int32_t* my, uint8_t* clicked, int32_t* wheel) { 
     *mx = mouse_x; *my = mouse_y; *clicked = mouse_clicked; if (mouse_clicked) mouse_clicked = 0; 
+    *wheel = mouse_wheel; mouse_wheel = 0; // Consume wheel delta
     if (!kernel_api.window_maximized && preferences_window_open) {
         uint32_t win_w = 800, win_h = 600;
         *mx -= (screen_w - win_w) / 2;
@@ -1140,6 +1142,14 @@ void mouse_init() {
     mouse_wait(1); outb(0x64, 0xA8); mouse_wait(1); outb(0x64, 0x20);
     mouse_wait(0); uint8_t conf = (inb(0x60) | 2) & ~0x20;
     mouse_wait(1); outb(0x64, 0x60); mouse_wait(1); outb(0x60, conf);
+    
+    // IntelliMouse detection sequence to enable scroll wheel
+    mouse_write(0xF3); mouse_read(); mouse_write(200); mouse_read();
+    mouse_write(0xF3); mouse_read(); mouse_write(100); mouse_read();
+    mouse_write(0xF3); mouse_read(); mouse_write(80);  mouse_read();
+    mouse_write(0xF2); mouse_read();
+    uint8_t res = mouse_read(); // Should be 3 if wheel supported
+    
     mouse_write(0xF6); mouse_read(); mouse_write(0xF4); mouse_read();
     ps2_flush(); __asm__ volatile("sti");
 }
@@ -1152,13 +1162,20 @@ void mouse_handler_main() {
             switch (mouse_cycle) {
                 case 0: if (data & 0x08) { mouse_byte[0] = data; mouse_cycle = 1; } break;
                 case 1: mouse_byte[1] = data; mouse_cycle = 2; break;
-                case 2:
-                    mouse_byte[2] = data; mouse_cycle = 0; int32_t dx = (int32_t)mouse_byte[1], dy = (int32_t)mouse_byte[2];
+                case 2: mouse_byte[2] = data; mouse_cycle = 3; break;
+                case 3:
+                    mouse_byte[3] = data; mouse_cycle = 0; 
+                    int32_t dx = (int32_t)mouse_byte[1], dy = (int32_t)mouse_byte[2];
                     if (mouse_byte[0] & 0x10) dx -= 256; if (mouse_byte[0] & 0x20) dy -= 256;
                     mouse_x += dx; mouse_y -= dy;
                     if (mouse_x < 0) mouse_x = 0; if (mouse_y < 0) mouse_y = 0;
                     if (mouse_x > (int32_t)screen_w - 5) mouse_x = screen_w - 5; if (mouse_y > (int32_t)screen_h - 5) mouse_y = screen_h - 5;
                     uint8_t current_left = mouse_byte[0] & 1; if (current_left && !mouse_left_button) mouse_clicked = 1; mouse_left_button = current_left;
+                    
+                    // Wheel delta (Z-axis) - lower 4 bits are the delta (signed 4-bit)
+                    int8_t wheel_delta = (int8_t)(mouse_byte[3] & 0x0F);
+                    if (wheel_delta & 0x08) wheel_delta |= 0xF0; // Sign extend
+                    mouse_wheel -= wheel_delta; // Natural scroll
                     break;
             }
         }
