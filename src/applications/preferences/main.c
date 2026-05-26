@@ -10,6 +10,7 @@ static int selected_menu = 0;
 static char wallpaper_list[1024];
 static int wallpaper_count = 0;
 static int selected_tz = 0;
+static int tz_dropdown_open = 0;
 
 void app_itoa(uint32_t n, char* s) {
     int i = 0;
@@ -265,6 +266,24 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         for (int i = 0; i < 4; i++) {
             api->draw_rect(arrow_x + i, arrow_y + i, (4 - i) * 2, 1, 0x666666, target_fb);
         }
+
+        if (tz_dropdown_open) {
+            uint32_t drop_y = ly - 8 + box_h;
+            uint32_t drop_h = 4 * box_h; 
+            api->draw_rect(value_x, drop_y, box_w, drop_h, 0xFFFFFF, target_fb);
+            api->draw_rect(value_x, drop_y, box_w, 1, 0xCCCCCC, target_fb); // Top border
+            api->draw_rect(value_x, drop_y + drop_h - 1, box_w, 1, 0xCCCCCC, target_fb); // Bottom
+            api->draw_rect(value_x, drop_y, 1, drop_h, 0xCCCCCC, target_fb); // Left
+            api->draw_rect(value_x + box_w - 1, drop_y, 1, drop_h, 0xCCCCCC, target_fb); // Right
+            
+            for (int i = 0; i < 4; i++) {
+                uint32_t item_y = drop_y + (i * box_h);
+                if (i == selected_tz) {
+                    api->draw_rect(value_x + 1, item_y + 1, box_w - 2, box_h - 2, 0xE0E0E0, target_fb);
+                }
+                api->draw_string_scaled(value_x + 10, item_y + 8, tz_names[i], 0x333333, 70, target_fb);
+            }
+        }
     }  
 
     else if (selected_menu == 3) { // About
@@ -363,6 +382,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                 uint32_t item_y = title_bar_h + 20 + (i * 40);
                 if (my >= (int32_t)(item_y - 10) && my <= (int32_t)(item_y + 25)) {
                     selected_menu = i;
+                    tz_dropdown_open = 0;
                 }
             }
         }
@@ -404,14 +424,32 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         if (selected_menu == 2) { // Date & Time
             uint32_t cx = sidebar_w + 40;
             uint32_t cy = title_bar_h + 40;
-            uint32_t ly = cy + 60 + (35 * 3) + 10 + 25 + 45; // Calculate ly same as in render
+            uint32_t ly = cy + 60 + (35 * 3) + 10 + 25 + 45; 
             uint32_t value_x = cx + 180;
             uint32_t box_w = 220;
             uint32_t box_h = 32;
 
-            if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ly - 8) && my <= (int32_t)(ly - 8 + box_h)) {
-                selected_tz = (selected_tz + 1) % 4; // Cycle through 4 options
-                return;
+            if (tz_dropdown_open) {
+                uint32_t drop_y = ly - 8 + box_h;
+                if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w)) {
+                    for (int i = 0; i < 4; i++) {
+                        uint32_t item_y = drop_y + (i * box_h);
+                        if (my >= (int32_t)item_y && my <= (int32_t)(item_y + box_h)) {
+                            selected_tz = i;
+                            tz_dropdown_open = 0;
+                            return;
+                        }
+                    }
+                }
+                tz_dropdown_open = 0;
+                if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ly - 8) && my <= (int32_t)(ly - 8 + box_h)) {
+                   return; 
+                }
+            } else {
+                if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ly - 8) && my <= (int32_t)(ly - 8 + box_h)) {
+                    tz_dropdown_open = 1;
+                    return;
+                }
             }
         }
     }
