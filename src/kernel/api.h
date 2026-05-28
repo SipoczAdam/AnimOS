@@ -43,6 +43,8 @@ typedef struct {
     int (*get_mouse_speed)();
     void (*set_scroll_speed)(int lines);
     int (*get_scroll_speed)();
+    void (*set_primary_button)(int button);
+    int (*get_primary_button)();
     uint8_t (*get_mouse_button_state)();
 
     // System Info

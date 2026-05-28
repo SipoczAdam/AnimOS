@@ -81,6 +81,7 @@ static int desktop_ready = 0;
 volatile int32_t mouse_x = 512, mouse_y = 384;
 volatile int32_t mouse_speed = 10; // 1.0x speed
 volatile int32_t mouse_scroll_speed = 3; // 3 lines per notch
+volatile int32_t mouse_primary_button = 0; // 0 = Left, 1 = Right
 volatile uint8_t mouse_left_button = 0;
 volatile uint8_t mouse_clicked = 0;
 volatile int32_t mouse_wheel = 0;
@@ -970,6 +971,14 @@ int kernel_get_scroll_speed() {
     return mouse_scroll_speed;
 }
 
+void kernel_set_primary_button(int button) {
+    mouse_primary_button = button;
+}
+
+int kernel_get_primary_button() {
+    return mouse_primary_button;
+}
+
 uint8_t kernel_get_mouse_button_state() {
     return mouse_left_button;
 }
@@ -1056,6 +1065,8 @@ void init_kernel_api() {
     kernel_api.get_mouse_speed = kernel_get_mouse_speed;
     kernel_api.set_scroll_speed = kernel_set_scroll_speed;
     kernel_api.get_scroll_speed = kernel_get_scroll_speed;
+    kernel_api.set_primary_button = kernel_set_primary_button;
+    kernel_api.get_primary_button = kernel_get_primary_button;
     kernel_api.get_mouse_button_state = kernel_get_mouse_button_state;
 
     get_cpu_brand(kernel_api.cpu_brand);
@@ -1313,7 +1324,13 @@ void mouse_handler_main() {
                     mouse_x += (dx * mouse_speed) / 10; mouse_y -= (dy * mouse_speed) / 10;
                     if (mouse_x < 0) mouse_x = 0; if (mouse_y < 0) mouse_y = 0;
                     if (mouse_x > (int32_t)screen_w - 5) mouse_x = screen_w - 5; if (mouse_y > (int32_t)screen_h - 5) mouse_y = screen_h - 5;
-                    uint8_t current_left = mouse_byte[0] & 1; if (current_left && !mouse_left_button) mouse_clicked = 1; mouse_left_button = current_left;
+                    
+                    uint8_t hardware_left = mouse_byte[0] & 1;
+                    uint8_t hardware_right = (mouse_byte[0] >> 1) & 1;
+                    uint8_t logical_left = (mouse_primary_button == 0) ? hardware_left : hardware_right;
+                    
+                    if (logical_left && !mouse_left_button) mouse_clicked = 1; 
+                    mouse_left_button = logical_left;
                     
                     // Wheel delta (Z-axis) - lower 4 bits are the delta (signed 4-bit)
                     int8_t wheel_delta = (int8_t)(mouse_byte[3] & 0x0F);

@@ -14,6 +14,8 @@ static int tz_dropdown_open = 0;
 static int tz_scroll_offset = 0;
 static int mouse_speed_val = 10;
 static int mouse_scroll_val = 3;
+static int selected_mouse_btn = 0;
+static int mouse_btn_dropdown_open = 0;
 
 void app_itoa(uint32_t n, char* s) {
     int i = 0;
@@ -357,6 +359,48 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         char sval_s[16];
         app_itoa(mouse_scroll_val, sval_s);
         api->draw_string_scaled(slider_x + slider_w + 25, sslider_y - 6, sval_s, 0x888888, 70, target_fb);
+
+        // Primary mouse button
+        uint32_t ply = sly + 60;
+        api->draw_string_scaled(cx, ply, "Primary mouse button:", 0x555555, 70, target_fb);
+        
+        uint32_t box_w = 200;
+        uint32_t box_h = 32;
+        uint32_t value_x = cx + 180;
+        
+        api->draw_rounded_rect(value_x, ply - 8, box_w, box_h, 4, 0xFFFFFF, target_fb);
+        api->draw_rect(value_x, ply - 8, box_w, 1, 0xCCCCCC, target_fb); // Top
+        api->draw_rect(value_x, ply + box_h - 9, box_w, 1, 0xCCCCCC, target_fb); // Bottom
+        api->draw_rect(value_x, ply - 8, 1, box_h, 0xCCCCCC, target_fb); // Left
+        api->draw_rect(value_x + box_w - 1, ply - 8, 1, box_h, 0xCCCCCC, target_fb); // Right
+
+        const char* btn_names[] = {"Left", "Right"};
+        api->draw_string_scaled(value_x + 10, ply, btn_names[selected_mouse_btn], 0x333333, 70, target_fb);
+
+        // Arrow icon (small triangle)
+        uint32_t arrow_x = value_x + box_w - 20;
+        uint32_t arrow_y = ply + 4;
+        for (int i = 0; i < 4; i++) {
+            api->draw_rect(arrow_x + i, arrow_y + i, (4 - i) * 2, 1, 0x666666, target_fb);
+        }
+
+        if (mouse_btn_dropdown_open) {
+            uint32_t drop_y = ply - 8 + box_h;
+            uint32_t drop_h = 2 * box_h; 
+            api->draw_rect(value_x, drop_y, box_w, drop_h, 0xFFFFFF, target_fb);
+            api->draw_rect(value_x, drop_y, box_w, 1, 0xCCCCCC, target_fb); // Top border
+            api->draw_rect(value_x, drop_y + drop_h - 1, box_w, 1, 0xCCCCCC, target_fb); // Bottom
+            api->draw_rect(value_x, drop_y, 1, drop_h, 0xCCCCCC, target_fb); // Left
+            api->draw_rect(value_x + box_w - 1, drop_y, 1, drop_h, 0xCCCCCC, target_fb); // Right
+
+            for (uint32_t i = 0; i < 2; i++) {
+                uint32_t item_y = drop_y + (i * box_h);
+                if ((int)i == selected_mouse_btn) {
+                    api->draw_rect(value_x + 1, item_y + 1, box_w - 2, box_h - 2, 0xE0E0E0, target_fb);
+                }
+                api->draw_string_scaled(value_x + 10, item_y + 8, btn_names[i], 0x333333, 70, target_fb);
+            }
+        }
     }
 
     else if (selected_menu == 4) { // About
@@ -432,6 +476,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         api->list_dir("Sysroot:/AnimOS/assets/wallpapers", wallpaper_list, 1024);
         mouse_speed_val = api->get_mouse_speed();
         mouse_scroll_val = api->get_scroll_speed();
+        selected_mouse_btn = api->get_primary_button();
     }
 
     if (event == APP_EVENT_CLICK || event == APP_EVENT_TICK) {
@@ -507,6 +552,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                         selected_menu = i;
                         tz_dropdown_open = 0;
                         tz_scroll_offset = 0;
+                        mouse_btn_dropdown_open = 0;
                     }
                 }
             }
@@ -542,6 +588,41 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                         return;
                     }
                     i++;
+                }
+            }
+
+            if (selected_menu == 3) { // Mouse & Cursor
+                uint32_t cx = sidebar_w + 40;
+                uint32_t cy = title_bar_h + 40;
+                uint32_t ly = cy + 80;
+                uint32_t sly = ly + 60;
+                uint32_t ply = sly + 60;
+                uint32_t value_x = cx + 180;
+                uint32_t box_w = 200;
+                uint32_t box_h = 32;
+
+                if (mouse_btn_dropdown_open) {
+                    uint32_t drop_y = ply - 8 + box_h;
+                    if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w)) {
+                        for (uint32_t i = 0; i < 2; i++) {
+                            uint32_t item_y = drop_y + (i * box_h);
+                            if (my >= (int32_t)item_y && my <= (int32_t)(item_y + box_h)) {
+                                selected_mouse_btn = i;
+                                mouse_btn_dropdown_open = 0;
+                                api->set_primary_button(selected_mouse_btn);
+                                return;
+                            }
+                        }
+                    }
+                    mouse_btn_dropdown_open = 0;
+                    if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ply - 8) && my <= (int32_t)(ply - 8 + box_h)) {
+                       return; 
+                    }
+                } else {
+                    if (mx >= (int32_t)value_x && mx <= (int32_t)(value_x + box_w) && my >= (int32_t)(ply - 8) && my <= (int32_t)(ply - 8 + box_h)) {
+                        mouse_btn_dropdown_open = 1;
+                        return;
+                    }
                 }
             }
 
