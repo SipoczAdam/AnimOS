@@ -39,6 +39,9 @@ typedef struct {
     const char* (*get_timezone)();
     int (*get_timezone_offset)();
     void (*set_timezone_offset)(int offset);
+    void (*set_mouse_speed)(int speed);
+    int (*get_mouse_speed)();
+    uint8_t (*get_mouse_button_state)();
 
     // System Info
     char cpu_brand[49];

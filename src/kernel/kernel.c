@@ -79,6 +79,7 @@ uint32_t global_ram_mb = 0;
 static int desktop_ready = 0;
 
 volatile int32_t mouse_x = 512, mouse_y = 384;
+volatile int32_t mouse_speed = 10; // 1.0x speed
 
 volatile uint8_t mouse_left_button = 0;
 volatile uint8_t mouse_clicked = 0;
@@ -953,6 +954,18 @@ void set_timezone_offset(int offset) {
     }
 }
 
+void kernel_set_mouse_speed(int speed) {
+    mouse_speed = speed;
+}
+
+int kernel_get_mouse_speed() {
+    return mouse_speed;
+}
+
+uint8_t kernel_get_mouse_button_state() {
+    return mouse_left_button;
+}
+
 const char* kernel_get_timezone() {
     if (ntp_automatic_mode) return "NTP (Automatic)";
     static char tz_buf[16];
@@ -1031,6 +1044,9 @@ void init_kernel_api() {
     kernel_api.get_timezone = kernel_get_timezone;
     kernel_api.get_timezone_offset = kernel_get_timezone_offset;
     kernel_api.set_timezone_offset = set_timezone_offset;
+    kernel_api.set_mouse_speed = kernel_set_mouse_speed;
+    kernel_api.get_mouse_speed = kernel_get_mouse_speed;
+    kernel_api.get_mouse_button_state = kernel_get_mouse_button_state;
 
     get_cpu_brand(kernel_api.cpu_brand);
     
@@ -1284,7 +1300,7 @@ void mouse_handler_main() {
                     mouse_byte[3] = data; mouse_cycle = 0; 
                     int32_t dx = (int32_t)mouse_byte[1], dy = (int32_t)mouse_byte[2];
                     if (mouse_byte[0] & 0x10) dx -= 256; if (mouse_byte[0] & 0x20) dy -= 256;
-                    mouse_x += dx; mouse_y -= dy;
+                    mouse_x += (dx * mouse_speed) / 10; mouse_y -= (dy * mouse_speed) / 10;
                     if (mouse_x < 0) mouse_x = 0; if (mouse_y < 0) mouse_y = 0;
                     if (mouse_x > (int32_t)screen_w - 5) mouse_x = screen_w - 5; if (mouse_y > (int32_t)screen_h - 5) mouse_y = screen_h - 5;
                     uint8_t current_left = mouse_byte[0] & 1; if (current_left && !mouse_left_button) mouse_clicked = 1; mouse_left_button = current_left;

@@ -12,6 +12,7 @@ static int wallpaper_count = 0;
 static int selected_tz = 0;
 static int tz_dropdown_open = 0;
 static int tz_scroll_offset = 0;
+static int mouse_speed_val = 10;
 
 void app_itoa(uint32_t n, char* s) {
     int i = 0;
@@ -319,6 +320,30 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
 
     else if (selected_menu == 3) { // Mouse & Cursor
         api->draw_string_scaled(cx, cy, "Mouse & Cursor Settings", 0x222222, 90, target_fb);
+        
+        uint32_t ly = cy + 80;
+        api->draw_string_scaled(cx, ly, "Cursor speed:", 0x555555, 70, target_fb);
+        
+        uint32_t slider_x = cx + 180;
+        uint32_t slider_w = 200;
+        uint32_t slider_y = ly + 8;
+        
+        // Track
+        api->draw_rect(slider_x, slider_y, slider_w, 4, 0xCCCCCC, target_fb);
+        
+        // Middle mark
+        api->draw_rect(slider_x + slider_w / 2, slider_y - 4, 1, 12, 0xAAAAAA, target_fb);
+
+        // Handle
+        // mouse_speed_val range 1 to 19, 10 is middle
+        uint32_t handle_x = slider_x + (mouse_speed_val - 1) * slider_w / 18;
+        api->draw_rounded_rect(handle_x - 4, slider_y - 8, 8, 20, 4, 0x0078D7, target_fb);
+
+        // Value text
+        char val_s[16];
+        app_itoa(mouse_speed_val, val_s);
+        // Center text vertically to the track (slider_y + 2)
+        api->draw_string_scaled(slider_x + slider_w + 25, slider_y - 6, val_s, 0x888888, 70, target_fb);
     }
 
     else if (selected_menu == 4) { // About
@@ -392,12 +417,42 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         selected_menu = 0;
         for (int i = 0; i < 1024; i++) wallpaper_list[i] = 0;
         api->list_dir("Sysroot:/AnimOS/assets/wallpapers", wallpaper_list, 1024);
+        mouse_speed_val = api->get_mouse_speed();
     }
 
     if (event == APP_EVENT_CLICK || event == APP_EVENT_TICK) {
         int32_t mx, my, wheel; uint8_t clicked;
         api->get_mouse_pos(&mx, &my, &clicked, &wheel);
+        uint8_t held = api->get_mouse_button_state();
         
+        // Mouse slider handling (for Mouse & Cursor menu)
+        if (selected_menu == 3) {
+            uint32_t cx = sidebar_w + 40;
+            uint32_t cy = title_bar_h + 40;
+            uint32_t ly = cy + 80;
+            uint32_t slider_x = cx + 180;
+            uint32_t slider_w = 200;
+            uint32_t slider_y = ly + 8;
+
+            if ((held || clicked) && mx >= (int32_t)(slider_x - 10) && mx <= (int32_t)(slider_x + slider_w + 10) &&
+                my >= (int32_t)(slider_y - 10) && my <= (int32_t)(slider_y + 15)) {
+                
+                int offset = mx - slider_x;
+                if (offset < 0) offset = 0;
+                if (offset > (int)slider_w) offset = slider_w;
+                
+                // Use symmetric rounding to match the handle_x calculation
+                int new_val = 1 + ((offset * 18 + (int)slider_w / 2) / (int)slider_w);
+                if (new_val < 1) new_val = 1;
+                if (new_val > 19) new_val = 19;
+                
+                if (new_val != mouse_speed_val) {
+                    mouse_speed_val = new_val;
+                    api->set_mouse_speed(mouse_speed_val);
+                }
+            }
+        }
+
         if (event == APP_EVENT_CLICK) {
             // Window Buttons Hit Test
             uint32_t close_size = 22;
