@@ -80,7 +80,7 @@ static int desktop_ready = 0;
 
 volatile int32_t mouse_x = 512, mouse_y = 384;
 volatile int32_t mouse_speed = 10; // 1.0x speed
-
+volatile int32_t mouse_scroll_speed = 3; // 3 lines per notch
 volatile uint8_t mouse_left_button = 0;
 volatile uint8_t mouse_clicked = 0;
 volatile int32_t mouse_wheel = 0;
@@ -962,6 +962,14 @@ int kernel_get_mouse_speed() {
     return mouse_speed;
 }
 
+void kernel_set_scroll_speed(int lines) {
+    mouse_scroll_speed = lines;
+}
+
+int kernel_get_scroll_speed() {
+    return mouse_scroll_speed;
+}
+
 uint8_t kernel_get_mouse_button_state() {
     return mouse_left_button;
 }
@@ -1046,6 +1054,8 @@ void init_kernel_api() {
     kernel_api.set_timezone_offset = set_timezone_offset;
     kernel_api.set_mouse_speed = kernel_set_mouse_speed;
     kernel_api.get_mouse_speed = kernel_get_mouse_speed;
+    kernel_api.set_scroll_speed = kernel_set_scroll_speed;
+    kernel_api.get_scroll_speed = kernel_get_scroll_speed;
     kernel_api.get_mouse_button_state = kernel_get_mouse_button_state;
 
     get_cpu_brand(kernel_api.cpu_brand);
@@ -1308,7 +1318,7 @@ void mouse_handler_main() {
                     // Wheel delta (Z-axis) - lower 4 bits are the delta (signed 4-bit)
                     int8_t wheel_delta = (int8_t)(mouse_byte[3] & 0x0F);
                     if (wheel_delta & 0x08) wheel_delta |= 0xF0; // Sign extend
-                    mouse_wheel -= wheel_delta; // Natural scroll
+                    mouse_wheel -= (wheel_delta * mouse_scroll_speed); // Natural scroll scaled by speed
                     break;
             }
         }

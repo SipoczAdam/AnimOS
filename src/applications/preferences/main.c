@@ -13,6 +13,7 @@ static int selected_tz = 0;
 static int tz_dropdown_open = 0;
 static int tz_scroll_offset = 0;
 static int mouse_speed_val = 10;
+static int mouse_scroll_val = 3;
 
 void app_itoa(uint32_t n, char* s) {
     int i = 0;
@@ -344,6 +345,18 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         app_itoa(mouse_speed_val, val_s);
         // Center text vertically to the track (slider_y + 2)
         api->draw_string_scaled(slider_x + slider_w + 25, slider_y - 6, val_s, 0x888888, 70, target_fb);
+
+        // Scroll Speed Slider
+        uint32_t sly = ly + 60;
+        api->draw_string_scaled(cx, sly, "Scroll speed:", 0x555555, 70, target_fb);
+        uint32_t sslider_y = sly + 8;
+        api->draw_rect(slider_x, sslider_y, slider_w, 4, 0xCCCCCC, target_fb);
+        api->draw_rect(slider_x + slider_w / 2, sslider_y - 4, 1, 12, 0xAAAAAA, target_fb);
+        uint32_t shandle_x = slider_x + (mouse_scroll_val - 1) * slider_w / 9; // Range 1-10
+        api->draw_rounded_rect(shandle_x - 4, sslider_y - 8, 8, 20, 4, 0x0078D7, target_fb);
+        char sval_s[16];
+        app_itoa(mouse_scroll_val, sval_s);
+        api->draw_string_scaled(slider_x + slider_w + 25, sslider_y - 6, sval_s, 0x888888, 70, target_fb);
     }
 
     else if (selected_menu == 4) { // About
@@ -418,6 +431,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         for (int i = 0; i < 1024; i++) wallpaper_list[i] = 0;
         api->list_dir("Sysroot:/AnimOS/assets/wallpapers", wallpaper_list, 1024);
         mouse_speed_val = api->get_mouse_speed();
+        mouse_scroll_val = api->get_scroll_speed();
     }
 
     if (event == APP_EVENT_CLICK || event == APP_EVENT_TICK) {
@@ -449,6 +463,24 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                 if (new_val != mouse_speed_val) {
                     mouse_speed_val = new_val;
                     api->set_mouse_speed(mouse_speed_val);
+                }
+            }
+
+            uint32_t sslider_y = ly + 68;
+            if ((held || clicked) && mx >= (int32_t)(slider_x - 10) && mx <= (int32_t)(slider_x + slider_w + 10) &&
+                my >= (int32_t)(sslider_y - 10) && my <= (int32_t)(sslider_y + 15)) {
+                
+                int offset = mx - slider_x;
+                if (offset < 0) offset = 0;
+                if (offset > (int)slider_w) offset = slider_w;
+                
+                int new_val = 1 + ((offset * 9 + (int)slider_w / 2) / (int)slider_w);
+                if (new_val < 1) new_val = 1;
+                if (new_val > 10) new_val = 10;
+                
+                if (new_val != mouse_scroll_val) {
+                    mouse_scroll_val = new_val;
+                    api->set_scroll_speed(mouse_scroll_val);
                 }
             }
         }

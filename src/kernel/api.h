@@ -41,6 +41,8 @@ typedef struct {
     void (*set_timezone_offset)(int offset);
     void (*set_mouse_speed)(int speed);
     int (*get_mouse_speed)();
+    void (*set_scroll_speed)(int lines);
+    int (*get_scroll_speed)();
     uint8_t (*get_mouse_button_state)();
 
     // System Info
