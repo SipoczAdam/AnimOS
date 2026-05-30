@@ -770,8 +770,8 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
         uint32_t icon_size = 32;
         draw_icon_scaled(dock_x + dock_w / 2 - icon_size / 2, dock_y + (dock_h - icon_size) / 2, icon_size, icon_size, preferences_icon_data, fb);
         
-        // Active indicator (small dot under the icon)
-        draw_rect(dock_x + dock_w / 2 - 2, dock_y + dock_h - 6, 4, 2, 0x0078D7, fb);
+        // Active indicator (small line under the icon)
+        draw_rect(dock_x + dock_w / 2 - 5, dock_y + dock_h - 6, 10, 2, 0x0078D7, fb);
     }
 }
 
