@@ -798,7 +798,7 @@ void draw_status_bar(struct multiboot_tag_framebuffer* fb) {
 }
 
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
-    if (preferences_window_open && kernel_api.window_maximized) return;
+    if (preferences_window_open && kernel_api.window_maximized && !kernel_api.window_minimized) return;
     uint32_t icon_xs[] = {30, 30}, icon_ys[] = {30, 130}; const char* labels[] = {"File explorer", "Preferences"}; uint8_t* icon_datas[] = {file_explorer_icon_data, preferences_icon_data};
     for (int i = 0; i < 2; i++) {
         if (!icon_datas[i]) continue;
@@ -1474,23 +1474,45 @@ void kernel_main(uint64_t multiboot_addr) {
         uint32_t ticks = 0;
         while(1) {
             ticks++; int32_t mx = mouse_x, my = mouse_y;
-            hover_icon = -1; if (!preferences_window_open && !dialog_state) { if (mx >= 20 && mx <= 120 && my >= 20 && my <= 100) hover_icon = 0; else if (mx >= 20 && mx <= 120 && my >= 120 && my <= 200) hover_icon = 1; }
+            
+            // 1. Calculate Hit Areas
+            int window_covers_desktop = preferences_window_open && kernel_api.window_maximized && !kernel_api.window_minimized;
+            int over_window = 0;
+            if (preferences_window_open && !kernel_api.window_minimized) {
+                if (kernel_api.window_maximized) over_window = 1;
+                else {
+                    uint32_t win_w = 800, win_h = 600;
+                    int32_t win_x = (screen_w - win_w) / 2, win_y = (screen_h - win_h) / 2;
+                    if (mx >= win_x && mx <= win_x + (int32_t)win_w && my >= win_y && my <= win_y + (int32_t)win_h) over_window = 1;
+                }
+            }
+            int over_dock = (my >= (int32_t)(fb->framebuffer_height - 55 - 20));
+
+            // 2. Hover Logic
+            hover_icon = -1;
+            if (!dialog_state && !window_covers_desktop && !over_window && !over_dock) {
+                if (mx >= 30 && mx <= 130 && my >= 30 && my <= 110) hover_icon = 0;
+                else if (mx >= 30 && mx <= 130 && my >= 130 && my <= 210) hover_icon = 1;
+            }
+
             if (mouse_clicked) {
                 mouse_clicked = 0;
-                
-                // 1. Global Power Icon Check
-                if (mx >= picon_x && mx <= picon_x + picon_w && my >= picon_y && my <= picon_y + picon_h) {
-                    power_menu_open = !power_menu_open;
-                } 
-                // 2. Power Menu Items (if open)
-                else if (power_menu_open && (mx >= 20 && mx <= 220 && my >= (int32_t)((fb->framebuffer_height - 55 - 20) - 120 - 10) && my <= (int32_t)((fb->framebuffer_height - 55 - 20) - 10))) {
+                int click_handled = 0;
+
+                // 3. Power Menu hit test (if open)
+                if (power_menu_open) {
                     uint32_t menu_x = 20, menu_y = (fb->framebuffer_height - 55 - 20) - 120 - 10;
-                    if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + 200) && my >= (int32_t)(menu_y + 10) && my <= (int32_t)(menu_y + 60)) { dialog_state = 1; power_menu_open = 0; power_menu_progress = 0; }
-                    else if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + 200) && my >= (int32_t)(menu_y + 70) && my <= (int32_t)(menu_y + 120)) { dialog_state = 2; power_menu_open = 0; power_menu_progress = 0; }
-                    else power_menu_open = 0;
-                } 
-                // 3. Dialog Buttons (if active)
-                else if (dialog_state != 0) {
+                    if (mx >= (int32_t)menu_x && mx <= (int32_t)(menu_x + 200) && my >= (int32_t)menu_y && my <= (int32_t)(menu_y + 120)) {
+                        if (my >= (int32_t)(menu_y + 10) && my <= (int32_t)(menu_y + 60)) { dialog_state = 1; power_menu_open = 0; power_menu_progress = 0; }
+                        else if (my >= (int32_t)(menu_y + 70) && my <= (int32_t)(menu_y + 120)) { dialog_state = 2; power_menu_open = 0; power_menu_progress = 0; }
+                        click_handled = 1;
+                    } else {
+                        power_menu_open = 0; // Clicked outside, close menu and let pass through
+                    }
+                }
+
+                // 4. Dialog hit test (if active)
+                if (!click_handled && dialog_state != 0) {
                     const char* dmsg = (dialog_state == 1) ? "Are you sure you want to restart the system?" : "Are you sure you want to shutdown the system?";
                     uint32_t dw = get_string_width(dmsg) + 80; if (dw < 350) dw = 350;
                     uint32_t dh = 220, dx = (fb->framebuffer_width - dw) / 2, dy = (fb->framebuffer_height - dh) / 2;
@@ -1513,9 +1535,11 @@ void kernel_main(uint64_t multiboot_addr) {
                         }
                         while(1) __asm__ volatile("hlt");
                     } else if (mx >= (int32_t)(s_x + b_w + sp) && mx <= (int32_t)(s_x + 2 * b_w + sp) && my >= (int32_t)b_y && my <= (int32_t)(b_y + b_h)) dialog_state = 0;
-                } 
-                // 4. Preferences Window (if open)
-                else if (preferences_window_open) {
+                    click_handled = 1;
+                }
+
+                // 5. Preferences Window hit test (if open and visible)
+                if (!click_handled && over_window) {
                     uint32_t close_x = screen_w - 22 - 12, close_y = (40 - 22) / 2;
                     if (!kernel_api.window_maximized) {
                         uint32_t win_w = 800, win_h = 600;
@@ -1523,24 +1547,37 @@ void kernel_main(uint64_t multiboot_addr) {
                         close_y = (screen_h - win_h) / 2 + (40 - 22) / 2;
                     }
                     if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + 22) && my >= (int32_t)close_y && my <= (int32_t)(close_y + 22)) preferences_window_open = 0;
-                    else if (!kernel_api.window_minimized) draw_preferences_window(fb, APP_EVENT_CLICK);
-                } 
-                
-                // 4.5. Dock Icon Restoring/Minimizing
-                if (preferences_window_open) {
-                    uint32_t d_margin = 20, d_h = 55, d_w = fb->framebuffer_width - 2 * d_margin, d_x = d_margin, d_y = fb->framebuffer_height - d_h - d_margin;
-                    uint32_t i_size = 32;
-                    int32_t i_x = d_x + d_w / 2 - i_size / 2;
-                    int32_t i_y = d_y + (d_h - i_size) / 2;
-                    if (mx >= i_x && mx <= i_x + (int32_t)i_size && my >= i_y && my <= i_y + (int32_t)i_size) {
-                        kernel_api.window_minimized = !kernel_api.window_minimized;
+                    else draw_preferences_window(fb, APP_EVENT_CLICK);
+                    click_handled = 1;
+                }
+
+                // 6. Dock hit test (Always checked if dock is hit)
+                if (!click_handled && over_dock) {
+                    // Power Icon
+                    if (mx >= picon_x && mx <= picon_x + picon_w && my >= picon_y && my <= picon_y + picon_h) {
+                        power_menu_open = !power_menu_open;
+                        click_handled = 1;
+                    }
+                    // App Icons (Middle)
+                    else if (preferences_window_open) {
+                        uint32_t d_margin = 20, d_h = 55, d_w = fb->framebuffer_width - 2 * d_margin, d_x = d_margin, d_y = fb->framebuffer_height - d_h - d_margin;
+                        uint32_t i_size = 32;
+                        int32_t i_x = d_x + d_w / 2 - i_size / 2;
+                        int32_t i_y = d_y + (d_h - i_size) / 2;
+                        if (mx >= i_x && mx <= i_x + (int32_t)i_size && my >= i_y && my <= i_y + (int32_t)i_size) {
+                            kernel_api.window_minimized = !kernel_api.window_minimized;
+                            click_handled = 1;
+                        }
                     }
                 }
 
-                // 5. Desktop Icons
-                else {
+                // 7. Desktop Icons hit test
+                if (!click_handled) {
                     if (hover_icon != -1) {
-                        if (hover_icon == 1 && last_clicked_icon == 1 && (ticks - last_click_time) < 50) { preferences_window_open = 1; preferences_needs_init = 1; }
+                        if (hover_icon == 1 && last_clicked_icon == 1 && (ticks - last_click_time) < 50) { 
+                            if (preferences_window_open) kernel_api.window_minimized = 0;
+                            else { preferences_window_open = 1; preferences_needs_init = 1; kernel_api.window_minimized = 0; }
+                        }
                         selected_icon = hover_icon; last_clicked_icon = hover_icon; last_click_time = ticks;
                     } else if (my < (int32_t)(fb->framebuffer_height - 55 - 20)) selected_icon = -1;
                 }
