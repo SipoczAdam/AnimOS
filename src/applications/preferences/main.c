@@ -108,6 +108,7 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     // 4. Window Buttons
     uint32_t close_size = 22;
     uint32_t max_size = 24;
+    uint32_t min_size = 22;
 
     uint32_t close_y = (title_bar_h - close_size) / 2;
     uint32_t close_x = w - close_size - 12;
@@ -116,6 +117,10 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
     uint32_t max_y = (title_bar_h - max_size) / 2;
     uint32_t max_x = close_x - max_size - 8;
     if (api->maximize_icon) api->draw_icon_scaled(max_x, max_y, max_size, max_size, api->maximize_icon, target_fb);
+
+    uint32_t min_y = (title_bar_h - min_size) / 2;
+    uint32_t min_x = max_x - min_size - 8;
+    if (api->minimize_icon) api->draw_icon_scaled(min_x, min_y, min_size, min_size, api->minimize_icon, target_fb);
 
     // 5. Sidebar Menu Items
     const char* menu_items[] = {"Wallpaper", "Network", "Date & Time", "Mouse & Cursor", "About"};
