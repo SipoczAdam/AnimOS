@@ -766,12 +766,17 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
     draw_string(dock_x + dock_w - 80, dock_y + 17, time_str, 0x333333, fb);
 
     // App Icons in the middle
-    if (preferences_window_open && !kernel_api.window_maximized && preferences_icon_data) {
+    if (preferences_window_open && preferences_icon_data) {
         uint32_t icon_size = 32;
         draw_icon_scaled(dock_x + dock_w / 2 - icon_size / 2, dock_y + (dock_h - icon_size) / 2, icon_size, icon_size, preferences_icon_data, fb);
         
         // Active indicator (small line under the icon)
-        draw_rect(dock_x + dock_w / 2 - 5, dock_y + dock_h - 6, 10, 2, 0x0078D7, fb);
+        if (!kernel_api.window_minimized) {
+            draw_rect(dock_x + dock_w / 2 - 5, dock_y + dock_h - 6, 10, 2, 0x0078D7, fb);
+        } else {
+            // Minimized indicator (slightly more subtle or different color, or just no indicator)
+            draw_rect(dock_x + dock_w / 2 - 3, dock_y + dock_h - 6, 6, 2, 0x888888, fb);
+        }
     }
 }
 
@@ -1095,6 +1100,7 @@ void init_kernel_api() {
     kernel_api.disk_size_gb = ata_get_size_gb(boot_drive);
     kernel_api.disk_size_mb = ata_get_size_mb(boot_drive);
     kernel_api.window_maximized = 1;
+    kernel_api.window_minimized = 0;
 }
 
 static uint8_t* preferences_bin_cache = 0; static uint32_t preferences_bin_size = 0;
@@ -1192,7 +1198,7 @@ void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot
     struct multiboot_tag_framebuffer back_fb = *real_fb; back_fb.framebuffer_addr = (uint64_t)screen_backbuffer; back_fb.framebuffer_pitch = real_fb->framebuffer_width * 4; back_fb.framebuffer_bpp = 32;
     draw_background(&back_fb);
     
-    int show_desktop = !preferences_window_open || !kernel_api.window_maximized;
+    int show_desktop = !preferences_window_open || !kernel_api.window_maximized || kernel_api.window_minimized;
     
     if (show_desktop) {
         draw_desktop_icons(&back_fb);
@@ -1200,7 +1206,16 @@ void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot
     }
     
     if (preferences_window_open) {
-        draw_preferences_window(&back_fb, preferences_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK); preferences_needs_init = 0;
+        if (!kernel_api.window_minimized) {
+            draw_preferences_window(&back_fb, preferences_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK);
+        } else {
+            // Run in background: call the app but with a dummy target or just skip blitting
+            // For now, we call it with a fake framebuffer that points to its own window buffer
+            struct multiboot_tag_framebuffer dummy_fb = back_fb;
+            dummy_fb.framebuffer_addr = (uint64_t)preferences_window_buffer;
+            run_app("Sysroot:/AnimOS/apps/preferences.bin", &dummy_fb, preferences_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK);
+        }
+        preferences_needs_init = 0;
     }
     
     if (power_menu_progress > 0) draw_power_menu(&back_fb, power_menu_progress);
@@ -1508,8 +1523,20 @@ void kernel_main(uint64_t multiboot_addr) {
                         close_y = (screen_h - win_h) / 2 + (40 - 22) / 2;
                     }
                     if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + 22) && my >= (int32_t)close_y && my <= (int32_t)(close_y + 22)) preferences_window_open = 0;
-                    else draw_preferences_window(fb, APP_EVENT_CLICK);
+                    else if (!kernel_api.window_minimized) draw_preferences_window(fb, APP_EVENT_CLICK);
                 } 
+                
+                // 4.5. Dock Icon Restoring/Minimizing
+                if (preferences_window_open) {
+                    uint32_t d_margin = 20, d_h = 55, d_w = fb->framebuffer_width - 2 * d_margin, d_x = d_margin, d_y = fb->framebuffer_height - d_h - d_margin;
+                    uint32_t i_size = 32;
+                    int32_t i_x = d_x + d_w / 2 - i_size / 2;
+                    int32_t i_y = d_y + (d_h - i_size) / 2;
+                    if (mx >= i_x && mx <= i_x + (int32_t)i_size && my >= i_y && my <= i_y + (int32_t)i_size) {
+                        kernel_api.window_minimized = !kernel_api.window_minimized;
+                    }
+                }
+
                 // 5. Desktop Icons
                 else {
                     if (hover_icon != -1) {

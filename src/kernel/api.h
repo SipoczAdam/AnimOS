@@ -54,6 +54,7 @@ typedef struct {
     uint32_t disk_size_gb;
     uint32_t disk_size_mb;
     int window_maximized;
+    int window_minimized;
 } kernel_api_t;
 
 typedef enum {

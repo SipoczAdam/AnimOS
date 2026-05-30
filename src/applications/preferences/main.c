@@ -539,13 +539,25 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             // Window Buttons Hit Test
             uint32_t close_size = 22;
             uint32_t max_size = 24;
+            uint32_t min_size = 22;
             
             uint32_t close_x = fb->framebuffer_width - close_size - 12;
             uint32_t max_x = close_x - max_size - 8;
-            uint32_t max_y = (title_bar_h - max_size) / 2;
+            uint32_t min_x = max_x - min_size - 8;
+            uint32_t btns_y = (title_bar_h - max_size) / 2;
             
-            if (mx >= (int32_t)max_x && mx <= (int32_t)(max_x + max_size) && my >= (int32_t)max_y && my <= (int32_t)(max_y + max_size)) {
+            if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + close_size) && my >= (int32_t)btns_y && my <= (int32_t)(btns_y + close_size)) {
+                // Close button is handled by kernel typically, but we could signal it here too
+                return;
+            }
+
+            if (mx >= (int32_t)max_x && mx <= (int32_t)(max_x + max_size) && my >= (int32_t)btns_y && my <= (int32_t)(btns_y + max_size)) {
                 api->window_maximized = !api->window_maximized;
+                return;
+            }
+
+            if (mx >= (int32_t)min_x && mx <= (int32_t)(min_x + min_size) && my >= (int32_t)btns_y && my <= (int32_t)(btns_y + min_size)) {
+                api->window_minimized = 1;
                 return;
             }
 
