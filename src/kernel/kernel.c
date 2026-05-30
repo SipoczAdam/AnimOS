@@ -764,6 +764,15 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
     }
     uint8_t h, m; get_time(&h, &m); char time_str[6] = { (h/10)+'0', (h%10)+'0', ':', (m/10)+'0', (m%10)+'0', 0 };
     draw_string(dock_x + dock_w - 80, dock_y + 17, time_str, 0x333333, fb);
+
+    // App Icons in the middle
+    if (preferences_window_open && !kernel_api.window_maximized && preferences_icon_data) {
+        uint32_t icon_size = 32;
+        draw_icon_scaled(dock_x + dock_w / 2 - icon_size / 2, dock_y + (dock_h - icon_size) / 2, icon_size, icon_size, preferences_icon_data, fb);
+        
+        // Active indicator (small dot under the icon)
+        draw_rect(dock_x + dock_w / 2 - 2, dock_y + dock_h - 6, 4, 2, 0x0078D7, fb);
+    }
 }
 
 void draw_status_bar(struct multiboot_tag_framebuffer* fb) {
