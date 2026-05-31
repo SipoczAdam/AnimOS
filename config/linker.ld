@@ -20,8 +20,10 @@ SECTIONS {
     }
 
     .bss : ALIGN(4K) {
+        bss_start = .;
         *(COMMON)
         *(.bss)
+        bss_end = .;
     }
 
     kernel_end = .;

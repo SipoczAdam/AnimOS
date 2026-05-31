@@ -55,6 +55,7 @@ uint16_t e1000_eeprom_read(uint8_t addr) {
 }
 
 int e1000_init(struct pci_device* dev) {
+    if (!dev || dev->bar0 < 0x1000 || dev->bar0 > 0xFFFFFFFFF) return -1;
     pci_config_write_dword(dev->bus, dev->slot, dev->func, 0x04, 0x0007);
     mmio_base = dev->bar0 & ~0xF;
     
@@ -142,6 +143,7 @@ int e1000_init(struct pci_device* dev) {
 }
 
 void e1000_send_packet(const void* data, uint16_t length) {
+    if (!tx_descs) return;
     uint8_t* dst = (uint8_t*)tx_descs[tx_cur].addr;
     for(uint16_t i = 0; i < length; i++) dst[i] = ((uint8_t*)data)[i];
     tx_descs[tx_cur].length = length;
@@ -152,12 +154,13 @@ void e1000_send_packet(const void* data, uint16_t length) {
     tx_cur = (tx_cur + 1) % NUM_TX_DESCRIPTORS;
     write_reg(E1000_REG_TDT, tx_cur);
     
-    uint32_t timeout = 1000000;
+    // Failsafe timeout: ne várjunk örökké ha a hardver elakad
+    uint32_t timeout = 50000; 
     while(!(tx_descs[old_cur].status & 0x01) && timeout--) __asm__ volatile("pause");
 }
 
 int e1000_receive_packet(void* buffer, uint16_t* length) {
-    if(!(rx_descs[rx_cur].status & 0x01)) return 0;
+    if(!rx_descs || !(rx_descs[rx_cur].status & 0x01)) return 0;
     *length = rx_descs[rx_cur].length;
     uint8_t* src = (uint8_t*)rx_descs[rx_cur].addr;
     for(uint16_t i = 0; i < *length; i++) ((uint8_t*)buffer)[i] = src[i];

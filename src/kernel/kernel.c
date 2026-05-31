@@ -20,7 +20,7 @@ struct idt_ptr {
     uint16_t limit; uint64_t base;
 } __attribute__((packed));
 
-struct idt_entry idt[256];
+struct idt_entry idt[256] __attribute__((aligned(16)));
 struct idt_ptr idtp;
 
 #pragma pack(push, 1)
@@ -100,7 +100,10 @@ int kernel_get_timezone_offset();
 
 void msleep(uint32_t ms);
 void* malloc_custom(uint32_t size);
+void draw_string(uint32_t x, uint32_t y, const char* str, uint32_t color, struct multiboot_tag_framebuffer* fb);
 void draw_pixel(uint32_t x, uint32_t y, uint32_t color, struct multiboot_tag_framebuffer* fb);
+void strcpy_custom(char* dst, const char* src);
+void strcat_custom(char* dst, const char* src);
 uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
 void draw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color, struct multiboot_tag_framebuffer* fb);
 uint32_t get_wallpaper_pixel_fast(uint32_t x, uint32_t y, struct multiboot_tag_framebuffer* fb);
@@ -165,11 +168,45 @@ const char* strstr_custom(const char* haystack, const char* needle) {
 void msleep(uint32_t ms) {
     if (ms == 0) return;
     for (uint32_t i = 0; i < ms; i++) {
-        outb(0x43, 0xB0); outb(0x42, 1193 & 0xFF); outb(0x42, (1193 >> 8) & 0xFF);
-        uint8_t ctrl = inb(0x61) & 0xFC;
-        outb(0x61, ctrl); outb(0x61, ctrl | 1);
-        while (!(inb(0x61) & 0x20));
+        // Garantáltan nem blokkoló, port-alapú várakozás (kb. 1ms)
+        for (volatile int j = 0; j < 1250; j++) {
+            inb(0x80); // Standard IO delay port (~1us per hívás)
+        }
     }
+}
+
+void kernel_panic(const char* msg) {
+    __asm__ volatile("cli");
+    if (global_fb) {
+        draw_rect(0, 0, screen_w, screen_h, 0xFF0000, global_fb);
+        draw_string(50, 50, "--- KERNEL PANIC (EXCEPTION) ---", 0xFFFFFF, global_fb);
+        draw_string(50, 80, msg, 0xFFFFFF, global_fb);
+    }
+    while(1) __asm__ volatile("hlt");
+}
+
+void exception_handler_main(uint64_t vec, uint64_t err, uint64_t rip) {
+    char buf[256];
+    strcpy_custom(buf, "Exception: 0x");
+    uint8_t v = (uint8_t)vec;
+    buf[13] = "0123456789ABCDEF"[(v >> 4) & 0xF];
+    buf[14] = "0123456789ABCDEF"[v & 0xF];
+    buf[15] = 0;
+    strcat_custom(buf, ", Error: 0x");
+    
+    uint32_t e = (uint32_t)err;
+    char hex_err[9];
+    for(int i=0; i<8; i++) hex_err[7-i] = "0123456789ABCDEF"[(e >> (i*4)) & 0xF];
+    hex_err[8] = 0;
+    strcat_custom(buf, hex_err);
+
+    strcat_custom(buf, ", RIP: 0x");
+    char hex_rip[17];
+    for(int i=0; i<16; i++) hex_rip[15-i] = "0123456789ABCDEF"[(rip >> (i*4)) & 0xF];
+    hex_rip[16] = 0;
+    strcat_custom(buf, hex_rip);
+    
+    kernel_panic(buf);
 }
 
 extern uint8_t kernel_end[];
@@ -177,11 +214,11 @@ static uint8_t* bump_ptr = 0;
 
 void* malloc_custom(uint32_t size) {
     if (bump_ptr == 0) bump_ptr = kernel_end;
-    bump_ptr = (uint8_t*)(((uint64_t)bump_ptr + 7) & ~7);
+    bump_ptr = (uint8_t*)(((uint64_t)bump_ptr + 15) & ~15); // 16-byte alignment (SSE miatt fontos!)
     
-    // Safety: don't go beyond 1GB for now (identity mapping is 512GB, but let's be safe)
-    if ((uint64_t)bump_ptr > 0x40000000) {
-        return 0; // Out of memory (basic)
+    // Safety: 4GB-ig engedjük a foglalást (identitás leképezés 16GB)
+    if ((uint64_t)bump_ptr > 0xFFFFFFFF) {
+        return 0;
     }
     
     void* ptr = bump_ptr;
@@ -1298,6 +1335,7 @@ void idt_set_gate(uint8_t num, uint64_t base, uint16_t sel, uint8_t flags) {
 }
 
 extern void idt_load(struct idt_ptr* ptr); extern void isr_mouse_stub(void); extern void isr_keyboard_stub(void);
+extern void isr_common_stub(void);
 
 void keyboard_handler_main() {
     uint8_t scancode = inb(0x60);
@@ -1309,7 +1347,7 @@ void keyboard_handler_main() {
     outb(0x20, 0x20);
 }
 
-uint8_t mouse_cycle = 0, mouse_byte[3];
+uint8_t mouse_cycle = 0, mouse_byte[4], mouse_mode = 0;
 void mouse_wait(uint8_t a_type) { uint32_t timeout = 100000; if (a_type == 0) { while (timeout--) { if (inb(0x64) & 1) return; } } else { while (timeout--) { if (!(inb(0x64) & 2)) return; } } }
 void ps2_flush() { uint32_t timeout = 1000; while (timeout-- && (inb(0x64) & 1)) inb(0x60); }
 void mouse_write(uint8_t data) { mouse_wait(1); outb(0x64, 0xD4); mouse_wait(1); outb(0x60, data); }
@@ -1321,14 +1359,17 @@ void mouse_init() {
     mouse_wait(0); uint8_t conf = (inb(0x60) | 2) & ~0x20;
     mouse_wait(1); outb(0x64, 0x60); mouse_wait(1); outb(0x60, conf);
     
+    mouse_write(0xF6); mouse_read(); // Set defaults (resets to 3-byte mode)
+
     // IntelliMouse detection sequence to enable scroll wheel
     mouse_write(0xF3); mouse_read(); mouse_write(200); mouse_read();
     mouse_write(0xF3); mouse_read(); mouse_write(100); mouse_read();
     mouse_write(0xF3); mouse_read(); mouse_write(80);  mouse_read();
     mouse_write(0xF2); mouse_read();
     uint8_t res = mouse_read(); // Should be 3 if wheel supported
+    if (res == 3) mouse_mode = 1; else mouse_mode = 0;
     
-    mouse_write(0xF6); mouse_read(); mouse_write(0xF4); mouse_read();
+    mouse_write(0xF4); mouse_read(); // Enable data reporting
     ps2_flush(); __asm__ volatile("sti");
 }
 
@@ -1340,9 +1381,18 @@ void mouse_handler_main() {
             switch (mouse_cycle) {
                 case 0: if (data & 0x08) { mouse_byte[0] = data; mouse_cycle = 1; } break;
                 case 1: mouse_byte[1] = data; mouse_cycle = 2; break;
-                case 2: mouse_byte[2] = data; mouse_cycle = 3; break;
+                case 2: 
+                    mouse_byte[2] = data;
+                    if (mouse_mode == 0) {
+                        mouse_cycle = 0;
+                        goto process_packet;
+                    } else {
+                        mouse_cycle = 3;
+                    }
+                    break;
                 case 3:
                     mouse_byte[3] = data; mouse_cycle = 0; 
+                process_packet: {
                     int32_t dx = (int32_t)mouse_byte[1], dy = (int32_t)mouse_byte[2];
                     if (mouse_byte[0] & 0x10) dx -= 256; if (mouse_byte[0] & 0x20) dy -= 256;
                     mouse_x += (dx * mouse_speed) / 10; mouse_y -= (dy * mouse_speed) / 10;
@@ -1356,11 +1406,14 @@ void mouse_handler_main() {
                     if (logical_left && !mouse_left_button) mouse_clicked = 1; 
                     mouse_left_button = logical_left;
                     
-                    // Wheel delta (Z-axis) - lower 4 bits are the delta (signed 4-bit)
-                    int8_t wheel_delta = (int8_t)(mouse_byte[3] & 0x0F);
-                    if (wheel_delta & 0x08) wheel_delta |= 0xF0; // Sign extend
-                    mouse_wheel -= (wheel_delta * mouse_scroll_speed); // Natural scroll scaled by speed
+                    if (mouse_mode == 1) {
+                        // Wheel delta (Z-axis) - lower 4 bits are the delta (signed 4-bit)
+                        int8_t wheel_delta = (int8_t)(mouse_byte[3] & 0x0F);
+                        if (wheel_delta & 0x08) wheel_delta |= 0xF0; // Sign extend
+                        mouse_wheel -= (wheel_delta * mouse_scroll_speed); // Natural scroll scaled by speed
+                    }
                     break;
+                }
             }
         }
         status = inb(0x64);
@@ -1421,8 +1474,41 @@ void kernel_main(uint64_t multiboot_addr) {
     }
     if (fb && fb->framebuffer_addr != 0) {
         global_fb = fb; screen_w = fb->framebuffer_width; screen_h = fb->framebuffer_height; mouse_x = screen_w / 2; mouse_y = screen_h / 2;
-        pic_remap(); for (int i = 0; i < 256; i++) idt_set_gate(i, 0, 0, 0);
-        idt_set_gate(33, (uint64_t)isr_keyboard_stub, 0x08, 0x8E); idt_set_gate(44, (uint64_t)isr_mouse_stub, 0x08, 0x8E);
+        pic_remap();
+        
+        // IDT feltöltése: 0-31 kivételek egyedi stubokkal
+        extern void exception_stub_0(void);  extern void exception_stub_1(void);  extern void exception_stub_2(void);  extern void exception_stub_3(void);
+        extern void exception_stub_4(void);  extern void exception_stub_5(void);  extern void exception_stub_6(void);  extern void exception_stub_7(void);
+        extern void exception_stub_8(void);  extern void exception_stub_9(void);  extern void exception_stub_10(void); extern void exception_stub_11(void);
+        extern void exception_stub_12(void); extern void exception_stub_13(void); extern void exception_stub_14(void); extern void exception_stub_15(void);
+        extern void exception_stub_16(void); extern void exception_stub_17(void); extern void exception_stub_18(void); extern void exception_stub_19(void);
+        extern void exception_stub_20(void); extern void exception_stub_21(void); extern void exception_stub_22(void); extern void exception_stub_23(void);
+        extern void exception_stub_24(void); extern void exception_stub_25(void); extern void exception_stub_26(void); extern void exception_stub_27(void);
+        extern void exception_stub_28(void); extern void exception_stub_29(void); extern void exception_stub_30(void); extern void exception_stub_31(void);
+
+        idt_set_gate(0, (uint64_t)exception_stub_0, 0x08, 0x8E);   idt_set_gate(1, (uint64_t)exception_stub_1, 0x08, 0x8E);
+        idt_set_gate(2, (uint64_t)exception_stub_2, 0x08, 0x8E);   idt_set_gate(3, (uint64_t)exception_stub_3, 0x08, 0x8E);
+        idt_set_gate(4, (uint64_t)exception_stub_4, 0x08, 0x8E);   idt_set_gate(5, (uint64_t)exception_stub_5, 0x08, 0x8E);
+        idt_set_gate(6, (uint64_t)exception_stub_6, 0x08, 0x8E);   idt_set_gate(7, (uint64_t)exception_stub_7, 0x08, 0x8E);
+        idt_set_gate(8, (uint64_t)exception_stub_8, 0x08, 0x8E);   idt_set_gate(9, (uint64_t)exception_stub_9, 0x08, 0x8E);
+        idt_set_gate(10, (uint64_t)exception_stub_10, 0x08, 0x8E); idt_set_gate(11, (uint64_t)exception_stub_11, 0x08, 0x8E);
+        idt_set_gate(12, (uint64_t)exception_stub_12, 0x08, 0x8E); idt_set_gate(13, (uint64_t)exception_stub_13, 0x08, 0x8E);
+        idt_set_gate(14, (uint64_t)exception_stub_14, 0x08, 0x8E); idt_set_gate(15, (uint64_t)exception_stub_15, 0x08, 0x8E);
+        idt_set_gate(16, (uint64_t)exception_stub_16, 0x08, 0x8E); idt_set_gate(17, (uint64_t)exception_stub_17, 0x08, 0x8E);
+        idt_set_gate(18, (uint64_t)exception_stub_18, 0x08, 0x8E); idt_set_gate(19, (uint64_t)exception_stub_19, 0x08, 0x8E);
+        idt_set_gate(20, (uint64_t)exception_stub_20, 0x08, 0x8E); idt_set_gate(21, (uint64_t)exception_stub_21, 0x08, 0x8E);
+        idt_set_gate(22, (uint64_t)exception_stub_22, 0x08, 0x8E); idt_set_gate(23, (uint64_t)exception_stub_23, 0x08, 0x8E);
+        idt_set_gate(24, (uint64_t)exception_stub_24, 0x08, 0x8E); idt_set_gate(25, (uint64_t)exception_stub_25, 0x08, 0x8E);
+        idt_set_gate(26, (uint64_t)exception_stub_26, 0x08, 0x8E); idt_set_gate(27, (uint64_t)exception_stub_27, 0x08, 0x8E);
+        idt_set_gate(28, (uint64_t)exception_stub_28, 0x08, 0x8E); idt_set_gate(29, (uint64_t)exception_stub_29, 0x08, 0x8E);
+        idt_set_gate(30, (uint64_t)exception_stub_30, 0x08, 0x8E); idt_set_gate(31, (uint64_t)exception_stub_31, 0x08, 0x8E);
+
+        extern void irq_common_stub(void);
+        for (int i = 32; i < 256; i++) idt_set_gate(i, (uint64_t)irq_common_stub, 0x08, 0x8E);
+        
+        idt_set_gate(33, (uint64_t)isr_keyboard_stub, 0x08, 0x8E);
+        idt_set_gate(44, (uint64_t)isr_mouse_stub, 0x08, 0x8E);
+        
         idtp.limit = sizeof(idt) - 1; idtp.base = (uint64_t)&idt; idt_load(&idtp); mouse_init();
         for (uint32_t y = 0; y < fb->framebuffer_height; y++) for (uint32_t x = 0; x < fb->framebuffer_width; x++) draw_pixel(x, y, 0, fb);
         if (vfs_init() != 0) { draw_string_scaled(100, 100, "FATAL: VFS INIT FAILED!", 0xFFFFFF, 100, fb); while(1) __asm__ volatile("hlt"); }
@@ -1584,6 +1670,9 @@ void kernel_main(uint64_t multiboot_addr) {
             }
             if (power_menu_open && power_menu_progress < 100) power_menu_progress += 20; else if (!power_menu_open && power_menu_progress > 0) power_menu_progress -= 20;
             compose_frame(fb, multiboot_addr); kernel_yield(); msleep(10);
+            
+            // Heartbeat (villogó pixel a bal felső sarokban)
+            draw_pixel(0, 0, (ticks % 20 < 10) ? 0x00FF00 : 0x000000, fb);
         }
     }
     while(1) __asm__ volatile("hlt");
