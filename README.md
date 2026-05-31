@@ -9,46 +9,14 @@ Unauthorized copying, modification, or redistribution is strictly prohibited.
 See the [LICENSE](LICENSE) and [EULA](EULA) files for details.
 
 ## 💻 System Requirements
-<table>
-  <thead>
-    <tr>
-      <th align="center">Resource</th>
-      <th align="center">Minimum Requirement</th>
-      <th align="center">Recommended</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center"><b>Architecture</b></td>
-      <td align="center" colspan="2">x86_64 64 bit</td>
-    </tr>
-    <tr>
-      <td align="center"><b>Processor</b></td>
-      <td align="center">Intel Core i3 or AMD Ryzen 3</td>
-      <td align="center">Intel Core i5 or AMD Ryzen 5 or newer</td>
-    </tr>
-    <tr>
-      <td align="center"><b>RAM</b></td>
-      <td align="center">2 GB</td>
-      <td align="center">4 GB or more</td>
-    </tr>
-    <tr>
-      <td align="center"><b>Storage</b></td>
-      <td align="center">1 GB</td>
-      <td align="center">5 GB or more</td>
-    </tr>
-    <tr>
-      <td align="center"><b>Network</b></td>
-      <td align="center">Intel E1000 compatible NIC</td>
-      <td align="center">Intel E1000 (with active DHCP network/LAN)</td>
-    </tr>
-    <tr>
-      <td align="center"><b>Graphics</b></td>
-      <td align="center">Any Integrated GPU</td>
-      <td align="center">Any Dedicated GPU</td>
-    </tr>
-  </tbody>
-</table>
+| Resource | Minimum Requirement | Recommended |
+| :--- | :--- | :--- |
+|**Architecture**| x86_64 64 bit | x86_64 64 bit |
+|**Processor**| Intel Core i3 or AMD Ryzen 3 | Intel Core i5 or AMD Ryzen 5 or newer |
+|**RAM**| 2 GB | 4 GB or more |
+|**Storage**| 1 GB | 5 GB or more |
+|**Network**| Intel E1000 compatible NIC | Intel E1000 (with active DHCP network/LAN) |
+|**Graphics**| Any Integrated GPU | Any Dedicated GPU |
 
 ## 🛠️ Build and Run
 To build the OS using the Docker-based toolchain:
