@@ -83,10 +83,14 @@ volatile int32_t mouse_speed = 10; // 1.0x speed
 volatile int32_t mouse_scroll_speed = 3; // 3 lines per notch
 volatile int32_t mouse_primary_button = 0; // 0 = Left, 1 = Right
 volatile uint8_t mouse_left_button = 0;
-volatile uint8_t mouse_clicked = 0;
+volatile uint32_t mouse_click_count = 0;
 volatile int32_t mouse_wheel = 0;
 volatile int power_menu_open = 0;
 volatile int power_menu_progress = 0;
+
+static int32_t frame_mx, frame_my, frame_wheel;
+static uint8_t frame_clicked;
+static uint32_t last_kernel_click_count = 0;
 
 uint32_t cursor_buffer[64 * 64];
 uint32_t menu_area_buffer[200 * 300];
@@ -935,8 +939,8 @@ void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const 
 /* --- Window and App Management --- */
 
 void get_mouse_pos(int32_t* mx, int32_t* my, uint8_t* clicked, int32_t* wheel) { 
-    *mx = mouse_x; *my = mouse_y; *clicked = mouse_clicked; if (mouse_clicked) mouse_clicked = 0; 
-    *wheel = mouse_wheel; mouse_wheel = 0; // Consume wheel delta
+    *mx = frame_mx; *my = frame_my; *clicked = frame_clicked;
+    *wheel = frame_wheel;
     if (!kernel_api.window_maximized && preferences_window_open) {
         uint32_t win_w = 800, win_h = 600;
         *mx -= (screen_w - win_w) / 2;
@@ -1260,8 +1264,8 @@ void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot
     else if (dialog_state == 2) draw_dialog(&back_fb, "Shutdown", "Are you sure you want to shutdown the system?");
     
     // Save area under cursor from screen_backbuffer
-    int32_t cursor_saved_x = mouse_x;
-    int32_t cursor_saved_y = mouse_y;
+    int32_t cursor_saved_x = frame_mx;
+    int32_t cursor_saved_y = frame_my;
     int32_t cursor_saved_w = 0;
     int32_t cursor_saved_h = 0;
     
@@ -1289,7 +1293,7 @@ void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot
     }
 
     // Draw cursor onto the backbuffer so the blit is atomic and doesn't flicker/blink!
-    draw_cursor_simple(mouse_x, mouse_y, &back_fb);
+    draw_cursor_simple(frame_mx, frame_my, &back_fb);
     
     // Blit the double-buffered frame to the physical screen
     blit_buffer(screen_backbuffer, real_fb);
@@ -1338,11 +1342,19 @@ extern void idt_load(struct idt_ptr* ptr); extern void isr_mouse_stub(void); ext
 extern void isr_common_stub(void);
 
 void keyboard_handler_main() {
-    uint8_t scancode = inb(0x60);
-    if (scancode == 0x5B || scancode == 0x5C) {
-        if (!preferences_window_open || !kernel_api.window_maximized) {
-            power_menu_open = !power_menu_open;
+    uint8_t status = inb(0x64);
+    while (status & 1) {
+        if (!(status & 0x20)) {
+            uint8_t scancode = inb(0x60);
+            if (scancode == 0x5B || scancode == 0x5C) {
+                if (!preferences_window_open || !kernel_api.window_maximized) {
+                    power_menu_open = !power_menu_open;
+                }
+            }
+        } else {
+            break; // Mouse data, let the other handler take it
         }
+        status = inb(0x64);
     }
     outb(0x20, 0x20);
 }
@@ -1376,8 +1388,8 @@ void mouse_init() {
 void mouse_handler_main() {
     uint8_t status = inb(0x64);
     while (status & 1) {
-        uint8_t data = inb(0x60);
         if (status & 0x20) {
+            uint8_t data = inb(0x60);
             switch (mouse_cycle) {
                 case 0: if (data & 0x08) { mouse_byte[0] = data; mouse_cycle = 1; } break;
                 case 1: mouse_byte[1] = data; mouse_cycle = 2; break;
@@ -1403,7 +1415,7 @@ void mouse_handler_main() {
                     uint8_t hardware_right = (mouse_byte[0] >> 1) & 1;
                     uint8_t logical_left = (mouse_primary_button == 0) ? hardware_left : hardware_right;
                     
-                    if (logical_left && !mouse_left_button) mouse_clicked = 1; 
+                    if (logical_left && !mouse_left_button) mouse_click_count++; 
                     mouse_left_button = logical_left;
                     
                     if (mouse_mode == 1) {
@@ -1415,6 +1427,8 @@ void mouse_handler_main() {
                     break;
                 }
             }
+        } else {
+            break; // Keyboard data
         }
         status = inb(0x64);
     }
@@ -1559,7 +1573,14 @@ void kernel_main(uint64_t multiboot_addr) {
         int32_t picon_h = pbih->biHeight < 0 ? -pbih->biHeight : pbih->biHeight, picon_w = pbih->biWidth, picon_x = 20 + 15, picon_y = (fb->framebuffer_height - 55 - 20) + (55 - picon_h) / 2;
         uint32_t ticks = 0;
         while(1) {
-            ticks++; int32_t mx = mouse_x, my = mouse_y;
+            ticks++;
+            // 0. Atomic snapshot of mouse state for this frame
+            frame_mx = mouse_x; frame_my = mouse_y;
+            frame_wheel = mouse_wheel; mouse_wheel = 0;
+            frame_clicked = (mouse_click_count > last_kernel_click_count);
+            last_kernel_click_count = mouse_click_count;
+            
+            int32_t mx = frame_mx, my = frame_my;
             
             // 1. Calculate Hit Areas
             int window_covers_desktop = preferences_window_open && kernel_api.window_maximized && !kernel_api.window_minimized;
@@ -1581,8 +1602,7 @@ void kernel_main(uint64_t multiboot_addr) {
                 else if (mx >= 30 && mx <= 130 && my >= 130 && my <= 210) hover_icon = 1;
             }
 
-            if (mouse_clicked) {
-                mouse_clicked = 0;
+            if (frame_clicked) {
                 int click_handled = 0;
 
                 // 3. Power Menu hit test (if open)
