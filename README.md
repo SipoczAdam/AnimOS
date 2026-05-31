@@ -11,7 +11,7 @@ See the [LICENSE](LICENSE) and [EULA](EULA) files for details.
 ## 💻 System Requirements
 | Resource | Minimum Requirement | Recommended |
 | :--- | :--- | :--- |
-|**Architecture**| x86_64 32 bit | x86_64 64 bit |
+|**Architecture**| x86_64 64 bit |
 |**Processor**| Intel Core i3 or AMD Ryzen 3 | Intel Core i5 or AMD Ryzen 5 or newer |
 |**RAM**| 2 GB | 4 GB or more |
 |**Storage**| 1 GB | 5 GB or more |
