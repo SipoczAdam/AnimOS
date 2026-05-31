@@ -1593,7 +1593,11 @@ void kernel_main(uint64_t multiboot_addr) {
                         else if (my >= (int32_t)(menu_y + 70) && my <= (int32_t)(menu_y + 120)) { dialog_state = 2; power_menu_open = 0; power_menu_progress = 0; }
                         click_handled = 1;
                     } else {
-                        power_menu_open = 0; // Clicked outside, close menu and let pass through
+                        power_menu_open = 0; // Clicked outside, close menu
+                        // Check if we clicked the power icon itself - if so, we should treat it as handled so it doesn't reopen
+                        if (mx >= picon_x && mx <= picon_x + picon_w && my >= picon_y && my <= picon_y + picon_h) {
+                            click_handled = 1;
+                        }
                     }
                 }
 
