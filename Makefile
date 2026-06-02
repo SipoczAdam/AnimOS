@@ -35,6 +35,8 @@ compile:
 	# Build Applications
 	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -c $(SRCDIR)/applications/preferences/main.c -o $(BUILDDIR)/apps/preferences.o
 	$(LD) -m elf_x86_64 -T $(SRCDIR)/applications/linker.ld --oformat binary -o sysroot/AnimOS/apps/preferences.bin $(BUILDDIR)/apps/preferences.o
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -c $(SRCDIR)/applications/file_explorer/main.c -o $(BUILDDIR)/apps/file_explorer.o
+	$(LD) -m elf_x86_64 -T $(SRCDIR)/applications/linker.ld --oformat binary -o sysroot/AnimOS/apps/file_explorer.bin $(BUILDDIR)/apps/file_explorer.o
 
 # Linker
 link:
