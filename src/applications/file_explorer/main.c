@@ -20,6 +20,10 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     uint32_t cy = title_bar_h + 40;
     api->draw_string_scaled(cx, cy, "Disks and Drives", 0x222222, 90, fb);
 
+    if (api->system_drive_icon) {
+        api->draw_icon_scaled(cx, cy + 40, 96, 96, api->system_drive_icon, fb);
+    }
+
     uint32_t close_size = 22;
     uint32_t max_size = 24;
     uint32_t min_size = 22;
