@@ -16,6 +16,10 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
 
     api->draw_string_scaled(20, (title_bar_h - (18 * 80 / 100)) / 2, "File Explorer", 0x333333, 80, fb);
 
+    uint32_t cx = sidebar_w + 40;
+    uint32_t cy = title_bar_h + 40;
+    api->draw_string_scaled(cx, cy, "Disks and Drives", 0x222222, 90, fb);
+
     uint32_t close_size = 22;
     uint32_t max_size = 24;
     uint32_t min_size = 22;
