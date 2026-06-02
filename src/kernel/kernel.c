@@ -106,6 +106,8 @@ static uint8_t* app_bin_cache[2] = {0, 0};
 static uint32_t app_bin_size[2] = {0, 0};
 static const char* app_bin_paths[2] = {"Sysroot:/AnimOS/apps/file_explorer.bin", "Sysroot:/AnimOS/apps/preferences.bin"};
 static int currently_loaded_app = -1;
+static uint8_t* app_state_buffers[2] = {0, 0};
+static int app_state_saved[2] = {0, 0};
 
 /* --- Forward Declarations --- */
 
@@ -1199,19 +1201,50 @@ void run_app(const char* path, struct multiboot_tag_framebuffer* fb, app_event_t
         app_bin_size[idx] = size;
     }
     
-    if (currently_loaded_app != idx) {
-        event = APP_EVENT_INIT;
+    if (!app_state_buffers[idx]) {
+        app_state_buffers[idx] = (uint8_t*)malloc_custom(0x100000);
     }
     
-    if (event == APP_EVENT_INIT) {
+    if (currently_loaded_app != idx) {
+        // Save the state of the currently loaded app if it was valid
+        if (currently_loaded_app >= 0 && app_state_buffers[currently_loaded_app]) {
+            uint8_t* src = (uint8_t*)0x8000000;
+            uint8_t* dest = app_state_buffers[currently_loaded_app];
+            for (uint32_t i = 0; i < 0x100000; i++) {
+                dest[i] = src[i];
+            }
+            app_state_saved[currently_loaded_app] = 1;
+        }
+        
+        // Load the new app's saved state, or initialize it fresh
+        if (app_state_saved[idx] && event != APP_EVENT_INIT) {
+            uint8_t* src = app_state_buffers[idx];
+            uint8_t* dest = (uint8_t*)0x8000000;
+            for (uint32_t i = 0; i < 0x100000; i++) {
+                dest[i] = src[i];
+            }
+            currently_loaded_app = idx;
+        } else {
+            for (uint32_t i = 0; i < 0x100000; i++) app_memory[i] = 0;
+            uint64_t* src64 = (uint64_t*)app_bin_cache[idx];
+            uint64_t* dest64 = (uint64_t*)app_memory;
+            uint32_t blocks = app_bin_size[idx] / 8;
+            for (uint32_t i = 0; i < blocks; i++) dest64[i] = src64[i];
+            for (uint32_t i = blocks * 8; i < app_bin_size[idx]; i++) app_memory[i] = app_bin_cache[idx][i];
+            currently_loaded_app = idx;
+            app_state_saved[idx] = 1;
+            event = APP_EVENT_INIT; // Force initialization
+        }
+    } else if (event == APP_EVENT_INIT) {
         for (uint32_t i = 0; i < 0x100000; i++) app_memory[i] = 0;
         uint64_t* src64 = (uint64_t*)app_bin_cache[idx];
         uint64_t* dest64 = (uint64_t*)app_memory;
         uint32_t blocks = app_bin_size[idx] / 8;
         for (uint32_t i = 0; i < blocks; i++) dest64[i] = src64[i];
         for (uint32_t i = blocks * 8; i < app_bin_size[idx]; i++) app_memory[i] = app_bin_cache[idx][i];
-        currently_loaded_app = idx;
+        app_state_saved[idx] = 1;
     }
+    
     app_entry_t entry = (app_entry_t)app_memory;
     entry(&kernel_api, fb, event);
 }
@@ -1733,6 +1766,9 @@ void kernel_main(uint64_t multiboot_addr) {
                         close_y = (screen_h - win_h) / 2 + (40 - 22) / 2;
                     }
                     if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + 22) && my >= (int32_t)close_y && my <= (int32_t)(close_y + 22)) {
+                        if (active_app >= 0) {
+                            app_state_saved[active_app] = 0;
+                        }
                         if (active_app == 0) file_explorer_window_open = 0;
                         else if (active_app == 1) preferences_window_open = 0;
                         if (file_explorer_window_open) active_app = 0;
