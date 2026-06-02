@@ -1,14 +1,18 @@
 #include "../../kernel/api.h"
 
 static uint32_t title_bar_h = 40;
+static uint32_t sidebar_w = 200;
 
 static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb) {
     uint32_t w = fb->framebuffer_width;
     uint32_t h = fb->framebuffer_height;
 
-    api->draw_rect(0, 0, w, title_bar_h, 0xF0F0F0, fb);
-    api->draw_rect(0, title_bar_h, w, h - title_bar_h, 0xFFFFFF, fb);
-    api->draw_rect(0, title_bar_h, w, 1, 0xDDDDDD, fb);
+    api->draw_rect(0, 0, w, title_bar_h, 0xF0F0F0, fb); // Title bar
+    api->draw_rect(0, title_bar_h, sidebar_w, h - title_bar_h, 0xF9F9F9, fb); // Sidebar
+    api->draw_rect(sidebar_w, title_bar_h, w - sidebar_w, h - title_bar_h, 0xFFFFFF, fb); // Main area
+    
+    api->draw_rect(0, title_bar_h, w, 1, 0xDDDDDD, fb); // Horizontal separator
+    api->draw_rect(sidebar_w, title_bar_h, 1, h - title_bar_h, 0xDDDDDD, fb); // Vertical separator
 
     api->draw_string_scaled(20, (title_bar_h - (18 * 80 / 100)) / 2, "File Explorer", 0x333333, 80, fb);
 
