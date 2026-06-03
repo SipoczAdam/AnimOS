@@ -46,6 +46,7 @@ typedef struct {
     void (*set_primary_button)(int button);
     int (*get_primary_button)();
     uint8_t (*get_mouse_button_state)();
+    uint8_t* (*load_asset)(const char* path);
 
     // System Info
     char cpu_brand[49];
@@ -53,6 +54,7 @@ typedef struct {
     uint32_t ram_size_mb;
     uint32_t disk_size_gb;
     uint32_t disk_size_mb;
+    uint32_t disk_used_mb;
     int window_maximized;
     int window_minimized;
 } kernel_api_t;

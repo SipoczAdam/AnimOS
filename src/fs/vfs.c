@@ -36,3 +36,7 @@ int vfs_list_dir(const char* path, char* buffer, uint32_t max_size) {
     return -1;
 }
 
+uint32_t vfs_get_used_space_mb() {
+    return fat32_get_used_space_mb();
+}
+

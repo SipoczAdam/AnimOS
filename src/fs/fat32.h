@@ -56,5 +56,6 @@ uint8_t fat32_get_current_drive();
 int fat32_read_file(const char* path, uint8_t* buffer);
 uint32_t fat32_get_file_size(const char* path);
 int fat32_list_dir(const char* path, char* buffer, uint32_t max_size);
+uint32_t fat32_get_used_space_mb();
 
 #endif

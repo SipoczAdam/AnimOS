@@ -2,6 +2,15 @@
 
 static uint32_t title_bar_h = 40;
 static uint32_t sidebar_w = 200;
+static uint8_t* disk_icon = 0;
+
+static void itoa_custom(uint32_t n, char* s) {
+    uint32_t i = 0, j;
+    if (n == 0) { s[i++] = '0'; s[i] = 0; return; }
+    while (n > 0) { s[i++] = (n % 10) + '0'; n /= 10; }
+    s[i] = 0;
+    for (j = 0; j < i / 2; j++) { char c = s[j]; s[j] = s[i - 1 - j]; s[i - 1 - j] = c; }
+}
 
 static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb) {
     uint32_t w = fb->framebuffer_width;
@@ -10,7 +19,7 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     api->draw_rect(0, 0, w, title_bar_h, 0xF0F0F0, fb); // Title bar
     api->draw_rect(0, title_bar_h, sidebar_w, h - title_bar_h, 0xF9F9F9, fb); // Sidebar
     api->draw_rect(sidebar_w, title_bar_h, w - sidebar_w, h - title_bar_h, 0xFFFFFF, fb); // Main area
-    
+
     api->draw_rect(0, title_bar_h, w, 1, 0xDDDDDD, fb); // Horizontal separator
     api->draw_rect(sidebar_w, title_bar_h, 1, h - title_bar_h, 0xDDDDDD, fb); // Vertical separator
 
@@ -19,6 +28,76 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     uint32_t cx = sidebar_w + 40;
     uint32_t cy = title_bar_h + 40;
     api->draw_string_scaled(cx, cy, "Disks and Drives", 0x222222, 90, fb);
+
+    if (disk_icon) {
+        uint32_t icon_y = cy + 40;
+        uint32_t icon_size = 48;
+        api->draw_icon_scaled(cx, icon_y, icon_size, icon_size, disk_icon, fb);
+
+        uint32_t info_h = 18 + 18 + 8; // Spacing for 2 lines of text and a progress bar
+        uint32_t info_y = icon_y + (icon_size - info_h) / 2;
+
+        api->draw_string_scaled(cx + 64, info_y, "System Drive (C:)", 0x333333, 75, fb);
+
+        uint32_t total_mb = api->disk_size_mb;
+        uint32_t used_mb = api->disk_used_mb;
+        uint32_t free_mb = (total_mb > used_mb) ? (total_mb - used_mb) : 0;
+
+        char buf[128];
+        char num_buf[32];
+        int pos = 0;
+
+        if (total_mb < 1024) {
+            // Display in MB
+            itoa_custom(free_mb, num_buf);
+            for(int k=0; num_buf[k]; k++) buf[pos++] = num_buf[k];
+
+            const char* mid = " MB free of ";
+            for(int k=0; mid[k]; k++) buf[pos++] = mid[k];
+
+            itoa_custom(total_mb, num_buf);
+            for(int k=0; num_buf[k]; k++) buf[pos++] = num_buf[k];
+
+            const char* end = " MB";
+            for(int k=0; end[k]; k++) buf[pos++] = end[k];
+        } else {
+            // Display in GB (with 1 decimal point)
+            uint32_t free_gb_int = free_mb / 1024;
+            uint32_t free_gb_frac = (free_mb % 1024) * 10 / 1024;
+            uint32_t total_gb_int = total_mb / 1024;
+            uint32_t total_gb_frac = (total_mb % 1024) * 10 / 1024;
+
+            itoa_custom(free_gb_int, num_buf);
+            for(int k=0; num_buf[k]; k++) buf[pos++] = num_buf[k];
+            buf[pos++] = '.';
+            itoa_custom(free_gb_frac, num_buf);
+            for(int k=0; num_buf[k]; k++) buf[pos++] = num_buf[k];
+
+            const char* mid = " GB free of ";
+            for(int k=0; mid[k]; k++) buf[pos++] = mid[k];
+
+            itoa_custom(total_gb_int, num_buf);
+            for(int k=0; num_buf[k]; k++) buf[pos++] = num_buf[k];
+            buf[pos++] = '.';
+            itoa_custom(total_gb_frac, num_buf);
+            for(int k=0; num_buf[k]; k++) buf[pos++] = num_buf[k];
+
+            const char* end = " GB";
+            for(int k=0; end[k]; k++) buf[pos++] = end[k];
+        }
+        buf[pos] = 0;
+
+        api->draw_string_scaled(cx + 64, info_y + 18, buf, 0x777777, 60, fb);
+
+        // Progress bar for disk space
+        uint32_t bar_w = 200;
+        api->draw_rect(cx + 64, info_y + 36, bar_w, 8, 0xEEEEEE, fb);
+        if (total_mb > 0) {
+            uint32_t fill_w = (used_mb * bar_w) / total_mb;
+            if (fill_w > bar_w) fill_w = bar_w;
+            api->draw_rect(cx + 64, info_y + 36, fill_w, 8, 0x0078D7, fb);
+        }
+    }
 
     uint32_t close_size = 22;
     uint32_t max_size = 24;
@@ -62,6 +141,11 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
     }
 
     if (event == APP_EVENT_INIT || event == APP_EVENT_TICK || event == APP_EVENT_CLICK) {
+        if (event == APP_EVENT_INIT) {
+            disk_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer.bmp");
+            if (!disk_icon) disk_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
+        }
+
         struct multiboot_tag_framebuffer buffer_fb = *fb;
         buffer_fb.framebuffer_addr = (uint64_t)api->window_buffer;
         buffer_fb.framebuffer_pitch = fb->framebuffer_width * 4;

@@ -1151,6 +1151,7 @@ void init_kernel_api() {
     kernel_api.set_primary_button = kernel_set_primary_button;
     kernel_api.get_primary_button = kernel_get_primary_button;
     kernel_api.get_mouse_button_state = kernel_get_mouse_button_state;
+    kernel_api.load_asset = load_asset;
 
     get_cpu_brand(kernel_api.cpu_brand);
     
@@ -1168,6 +1169,7 @@ void init_kernel_api() {
     uint8_t boot_drive = vfs_get_boot_drive();
     kernel_api.disk_size_gb = ata_get_size_gb(boot_drive);
     kernel_api.disk_size_mb = ata_get_size_mb(boot_drive);
+    kernel_api.disk_used_mb = vfs_get_used_space_mb();
     kernel_api.window_maximized = 1;
     kernel_api.window_minimized = 0;
 }

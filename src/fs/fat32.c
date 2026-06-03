@@ -237,6 +237,33 @@ uint32_t fat32_get_file_size(const char* path) {
     return 0;
 }
 
+uint32_t fat32_get_used_space_mb() {
+    uint32_t total_clusters = (bpb.total_sectors_long - (data_start_sector - (fat_start_sector - bpb.reserved_sectors))) / bpb.sectors_per_cluster;
+    // For small drives, we can just scan the FAT.
+    // If it's too large, this might be slow, but for AnimOS it's fine.
+    uint32_t used_clusters = 0;
+    uint8_t fat_buf[512] __attribute__((aligned(16)));
+    
+    // Total clusters can also be derived from FAT size
+    uint32_t max_clusters = (bpb.sectors_per_fat_long * 512) / 4;
+    if (total_clusters > max_clusters) total_clusters = max_clusters;
+
+    uint32_t sectors_to_scan = (total_clusters * 4 + 511) / 512;
+    
+    for (uint32_t i = 0; i < sectors_to_scan; i++) {
+        if (ata_read_sectors(current_drive, fat_start_sector + i, 1, fat_buf) != 0) break;
+        uint32_t* entries = (uint32_t*)fat_buf;
+        for (uint32_t j = 0; j < 128; j++) {
+            uint32_t entry = entries[j] & 0x0FFFFFFF;
+            if (entry != 0) used_clusters++;
+        }
+    }
+
+    uint64_t used_bytes = (uint64_t)used_clusters * bpb.sectors_per_cluster * 512;
+    return (uint32_t)(used_bytes / (1024 * 1024));
+}
+
+
 int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
     struct fat32_directory_entry entry;
     uint32_t dir_cluster;
