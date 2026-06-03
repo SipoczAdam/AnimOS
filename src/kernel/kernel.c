@@ -62,7 +62,6 @@ uint8_t* boot_logo_data = 0;
 uint8_t* close_icon_data = 0;
 uint8_t* minimize_icon_data = 0;
 uint8_t* maximize_icon_data = 0;
-uint8_t* system_drive_icon_data = 0;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -1127,7 +1126,6 @@ void init_kernel_api() {
     kernel_api.draw_string_scaled = draw_string_scaled; kernel_api.get_string_width_scaled = get_string_width_scaled; kernel_api.draw_icon_scaled = draw_icon_scaled;
     kernel_api.close_icon = close_icon_data; kernel_api.maximize_icon = maximize_icon_data; kernel_api.minimize_icon = minimize_icon_data;
     kernel_api.boot_logo = boot_logo_data;
-    kernel_api.system_drive_icon = system_drive_icon_data;
     kernel_api.window_buffer = preferences_window_buffer; kernel_api.draw_rect = draw_rect; 
     kernel_api.draw_rounded_rect = draw_rounded_rect;
     kernel_api.blit_buffer = blit_buffer;
@@ -1665,7 +1663,6 @@ void kernel_main(uint64_t multiboot_addr) {
         file_explorer_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/file_explorer.bmp"); preferences_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/preferences.bmp");
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 60, fb);
         close_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/close.bmp"); minimize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/minimize.bmp"); maximize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/maximize.bmp");
-        system_drive_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 75, fb);
         init_kernel_api();
         struct pci_device net_dev;

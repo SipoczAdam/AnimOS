@@ -18,7 +18,6 @@ typedef struct {
     uint8_t* maximize_icon;
     uint8_t* minimize_icon;
     uint8_t* boot_logo;
-    uint8_t* system_drive_icon;
     uint32_t* window_buffer;
 
     void (*draw_rect)(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color, struct multiboot_tag_framebuffer* fb);
