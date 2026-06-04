@@ -3,10 +3,15 @@
 static uint32_t title_bar_h = 40;
 static uint32_t sidebar_w = 200;
 static uint8_t* disk_icon = 0;
+static uint8_t* back_icon = 0;
+static uint8_t* reload_icon = 0;
 
 static int is_hovered = 0;
 static int is_selected = 0;
 static int is_drive_opened = 0;
+
+static int hover_back = 0;
+static int hover_reload = 0;
 
 static uint32_t current_ticks = 0;
 static uint32_t last_click_tick = 0;
@@ -33,9 +38,19 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     // Navigation bar (Breadcrumb) - Always visible
     api->draw_rect(0, title_bar_h, w, nav_bar_h, 0xFAFAFA, fb);
     api->draw_rect(0, title_bar_h + nav_bar_h, w, 1, 0xEEEEEE, fb);
+
+    // Navigation buttons
+    uint32_t btn_y = title_bar_h + (nav_bar_h - 22) / 2;
+    if (hover_back) api->draw_rounded_rect(10, btn_y - 2, 26, 26, 4, 0xEEEEEE, fb);
+    if (back_icon) api->draw_icon_scaled(12, btn_y, 22, 22, back_icon, fb);
     
+    if (hover_reload) api->draw_rounded_rect(44, btn_y - 2, 26, 26, 4, 0xEEEEEE, fb);
+    if (reload_icon) api->draw_icon_scaled(46, btn_y, 22, 22, reload_icon, fb);
+
+    api->draw_rect(80, title_bar_h + 8, 1, nav_bar_h - 16, 0xDDDDDD, fb); // Separator
+
     uint32_t bar_text_y = title_bar_h + (nav_bar_h - (18 * 70 / 100)) / 2;
-    uint32_t cur_x = 20;
+    uint32_t cur_x = 100;
 
     // Breadcrumb: File Explorer
     api->draw_string_scaled(cur_x, bar_text_y, "File Explorer", 0x555555, 70, fb);
@@ -186,8 +201,15 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             return;
         }
 
+        uint32_t nav_bar_h = 36;
+        uint32_t btn_y = title_bar_h + (nav_bar_h - 22) / 2;
+        if (is_inside(mx, my, 10, btn_y - 2, 26, 26)) {
+            is_drive_opened = 0;
+            return;
+        }
+
         uint32_t cx = sidebar_w + 40;
-        uint32_t cy = title_bar_h + 40;
+        uint32_t cy = title_bar_h + nav_bar_h + 1 + 40;
         uint32_t icon_y = cy + 60;
         
         int clicked_item = is_inside(mx, my, cx - 10, icon_y - 10, 320, 70);
@@ -205,6 +227,8 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         if (event == APP_EVENT_INIT) {
             disk_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer.bmp");
             if (!disk_icon) disk_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
+            back_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/back.bmp");
+            reload_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/reload.bmp");
         }
 
         if (event == APP_EVENT_TICK) {
@@ -212,8 +236,13 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             uint8_t clicked;
             api->get_mouse_pos(&mx, &my, &clicked, &wheel);
 
+            uint32_t nav_bar_h = 36;
+            uint32_t btn_y = title_bar_h + (nav_bar_h - 22) / 2;
+            hover_back = is_inside(mx, my, 10, btn_y - 2, 26, 26);
+            hover_reload = is_inside(mx, my, 44, btn_y - 2, 26, 26);
+
             uint32_t cx = sidebar_w + 40;
-            uint32_t cy = title_bar_h + 40;
+            uint32_t cy = title_bar_h + nav_bar_h + 1 + 40;
             uint32_t icon_y = cy + 60;
             is_hovered = is_inside(mx, my, cx - 10, icon_y - 10, 320, 70);
         }
