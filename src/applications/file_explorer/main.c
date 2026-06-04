@@ -7,6 +7,8 @@ static uint8_t* back_icon = 0;
 static uint8_t* reload_icon = 0;
 static uint8_t* folder_icon = 0;
 static uint8_t* file_icon = 0;
+static uint8_t* exe_icon = 0;
+static uint8_t* bmp_icon = 0;
 
 typedef struct {
     char name[256];
@@ -15,7 +17,7 @@ typedef struct {
 
 static file_entry_t current_files[128];
 static int file_count = 0;
-static char current_path[512] = "Sysroot:/";
+static char current_path[512] = "Local Disk (Sysroot:)/";
 static int hover_file_index = -1;
 static int selected_file_index = -1;
 
@@ -155,7 +157,20 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
                     api->draw_rounded_rect(sidebar_w + 20, item_y - 4, item_w, item_h, 4, 0xEDF4FC, fb);
                 }
 
-                uint8_t* icon = current_files[i].is_directory ? folder_icon : file_icon;
+                uint8_t* icon = folder_icon;
+                if (!current_files[i].is_directory) {
+                    icon = file_icon;
+                    int name_len = 0; while (current_files[i].name[name_len]) name_len++;
+                    if (name_len > 4) {
+                        const char* ext = &current_files[i].name[name_len - 4];
+                        if (ext[0] == '.' && (ext[1] == 'b' || ext[1] == 'B') && (ext[2] == 'i' || ext[2] == 'I') && (ext[3] == 'n' || ext[3] == 'N')) {
+                            icon = exe_icon;
+                        } else if (ext[0] == '.' && (ext[1] == 'b' || ext[1] == 'B') && (ext[2] == 'm' || ext[2] == 'M') && (ext[3] == 'p' || ext[3] == 'P')) {
+                            icon = bmp_icon;
+                        }
+                    }
+                }
+                
                 if (icon) api->draw_icon_scaled(sidebar_w + 30, item_y, 20, 20, icon, fb);
                 api->draw_string_scaled(sidebar_w + 60, item_y + 2, current_files[i].name, 0x333333, 70, fb);
             }
@@ -350,6 +365,8 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             reload_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/reload.bmp");
             folder_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/folder.bmp");
             file_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/unknown_file.bmp");
+            exe_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/executable.bmp");
+            bmp_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/bmp.bmp");
         }
 
         if (event == APP_EVENT_TICK) {
