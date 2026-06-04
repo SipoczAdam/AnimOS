@@ -150,6 +150,7 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         while (*p && i < 100) {
             char name[256];
             int k = 0;
+            if (*p == 'D' || *p == 'F') p++; // Skip the type prefix
             while (*p && *p != '\n' && k < 255) name[k++] = *p++;
             name[k] = 0;
             if (*p == '\n') p++;
@@ -590,6 +591,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                 while (*p && i < 100) {
                     char name[256];
                     int k = 0;
+                    if (*p == 'D' || *p == 'F') p++; // Skip prefix
                     while (*p && *p != '\n' && k < 255) name[k++] = *p++;
                     name[k] = 0;
                     if (*p == '\n') p++;

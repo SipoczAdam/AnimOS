@@ -315,10 +315,19 @@ int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
                     name[k] = 0;
                 } else {
                     int k, l = 0;
-                    for (k = 0; k < 8 && d_entry->name[k] != ' '; k++) name[l++] = d_entry->name[k];
+                    uint8_t case_flags = d_entry->reserved;
+                    for (k = 0; k < 8 && d_entry->name[k] != ' '; k++) {
+                        char c = d_entry->name[k];
+                        if ((case_flags & 0x08) && (c >= 'A' && c <= 'Z')) c += 32;
+                        name[l++] = c;
+                    }
                     if (d_entry->ext[0] != ' ') {
                         name[l++] = '.';
-                        for (k = 0; k < 3 && d_entry->ext[k] != ' '; k++) name[l++] = d_entry->ext[k];
+                        for (k = 0; k < 3 && d_entry->ext[k] != ' '; k++) {
+                            char c = d_entry->ext[k];
+                            if ((case_flags & 0x10) && (c >= 'A' && c <= 'Z')) c += 32;
+                            name[l++] = c;
+                        }
                     }
                     name[l] = 0;
                 }
@@ -326,7 +335,8 @@ int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
                 if (!(name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0)))) {
                     int name_len = 0;
                     while (name[name_len]) name_len++;
-                    if (buffer_offset + name_len + 1 < max_size) {
+                    if (buffer_offset + name_len + 2 < max_size) {
+                        buffer[buffer_offset++] = (d_entry->attributes & 0x10) ? 'D' : 'F';
                         for (int k = 0; k < name_len; k++) buffer[buffer_offset++] = name[k];
                         buffer[buffer_offset++] = '\n';
                     } else {

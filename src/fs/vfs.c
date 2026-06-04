@@ -14,7 +14,7 @@ uint8_t vfs_get_boot_drive() {
 int vfs_read_file(const char* path, uint8_t* buffer) {
     // Basic "Sysroot:/" mapping
     if (memcmp_custom(path, "Sysroot:/", 9) == 0) {
-        const char* internal_path = path + 9;
+        const char* internal_path = path + 8;
         return fat32_read_file(internal_path, buffer);
     }
     return -1;
@@ -22,7 +22,7 @@ int vfs_read_file(const char* path, uint8_t* buffer) {
 
 uint32_t vfs_get_file_size(const char* path) {
     if (memcmp_custom(path, "Sysroot:/", 9) == 0) {
-        const char* internal_path = path + 9;
+        const char* internal_path = path + 8;
         return fat32_get_file_size(internal_path);
     }
     return 0;
@@ -30,7 +30,7 @@ uint32_t vfs_get_file_size(const char* path) {
 
 int vfs_list_dir(const char* path, char* buffer, uint32_t max_size) {
     if (memcmp_custom(path, "Sysroot:/", 9) == 0) {
-        const char* internal_path = path + 9;
+        const char* internal_path = path + 8;
         return fat32_list_dir(internal_path, buffer, max_size);
     }
     return -1;

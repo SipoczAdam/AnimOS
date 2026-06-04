@@ -5,6 +5,19 @@ static uint32_t sidebar_w = 200;
 static uint8_t* disk_icon = 0;
 static uint8_t* back_icon = 0;
 static uint8_t* reload_icon = 0;
+static uint8_t* folder_icon = 0;
+static uint8_t* file_icon = 0;
+
+typedef struct {
+    char name[256];
+    int is_directory;
+} file_entry_t;
+
+static file_entry_t current_files[128];
+static int file_count = 0;
+static char current_path[512] = "Sysroot:/";
+static int hover_file_index = -1;
+static int selected_file_index = -1;
 
 static int is_hovered = 0;
 static int is_selected = 0;
@@ -26,6 +39,45 @@ static void itoa_custom(uint32_t n, char* s) {
     while (n > 0) { s[i++] = (n % 10) + '0'; n /= 10; }
     s[i] = 0;
     for (j = 0; j < i / 2; j++) { char c = s[j]; s[j] = s[i - 1 - j]; s[i - 1 - j] = c; }
+}
+
+static void strcat_custom(char* dest, const char* src) {
+    while (*dest) dest++;
+    while (*src) *dest++ = *src++;
+    *dest = 0;
+}
+
+static void strcpy_custom(char* dest, const char* src) {
+    while (*src) *dest++ = *src++;
+    *dest = 0;
+}
+
+static int strcmp_custom(const char* s1, const char* s2) {
+    while (*s1 && (*s1 == *s2)) { s1++; s2++; }
+    return *(unsigned char*)s1 - *(unsigned char*)s2;
+}
+
+static void refresh_file_list(kernel_api_t* api) {
+    file_count = 0;
+    static char buffer[4096];
+    int res = api->list_dir(current_path, buffer, sizeof(buffer));
+    if (res <= 0) return;
+
+    char* ptr = buffer;
+    while (ptr < buffer + res && file_count < 128) {
+        char type = *ptr++;
+        int i = 0;
+        while (ptr < buffer + res && *ptr != '\n' && i < 255) {
+            current_files[file_count].name[i++] = *ptr++;
+        }
+        current_files[file_count].name[i] = 0;
+        if (ptr < buffer + res && *ptr == '\n') ptr++;
+        
+        current_files[file_count].is_directory = (type == 'D');
+        file_count++;
+    }
+    selected_file_index = -1;
+    hover_file_index = -1;
 }
 
 static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb) {
@@ -59,10 +111,21 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     cur_x += api->get_string_width_scaled(">", 70) + 8;
 
     if (is_drive_opened) {
-        // Breadcrumb: Local Disk
-        api->draw_string_scaled(cur_x, bar_text_y, "Local Disk (Sysroot:)", 0x555555, 70, fb);
-        cur_x += api->get_string_width_scaled("Local Disk (Sysroot:)", 70) + 8;
-        api->draw_string_scaled(cur_x, bar_text_y + 1, ">", 0x888888, 70, fb);
+        // Breadcrumb: Path
+        char temp_path[512];
+        strcpy_custom(temp_path, current_path);
+        
+        char* p = temp_path;
+        if (strcmp_custom(p, "Sysroot:/") == 0) {
+            api->draw_string_scaled(cur_x, bar_text_y, "Local Disk (Sysroot:)", 0x555555, 70, fb);
+            cur_x += api->get_string_width_scaled("Local Disk (Sysroot:)", 70) + 8;
+            api->draw_string_scaled(cur_x, bar_text_y + 1, ">", 0x888888, 70, fb);
+        } else {
+            // Very basic breadcrumb for nested paths: just show the full path string
+            api->draw_string_scaled(cur_x, bar_text_y, current_path, 0x555555, 70, fb);
+            cur_x += api->get_string_width_scaled(current_path, 70) + 8;
+            api->draw_string_scaled(cur_x, bar_text_y + 1, ">", 0x888888, 70, fb);
+        }
     }
 
     uint32_t content_y = title_bar_h + nav_bar_h + 1;
@@ -78,8 +141,25 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     uint32_t cy = content_y + 40;
 
     if (is_drive_opened) {
-        // Main content area in opened state could show files here
-        api->draw_string_scaled(cx, cy, "This folder is empty.", 0x888888, 75, fb);
+        if (file_count == 0) {
+            api->draw_string_scaled(cx, cy, "This folder is empty.", 0x888888, 75, fb);
+        } else {
+            for (int i = 0; i < file_count; i++) {
+                uint32_t item_y = cy + (i * 30);
+                uint32_t item_w = w - sidebar_w - 80;
+                uint32_t item_h = 28;
+
+                if (selected_file_index == i) {
+                    api->draw_rounded_rect(sidebar_w + 20, item_y - 4, item_w, item_h, 4, 0xD7E8FA, fb);
+                } else if (hover_file_index == i) {
+                    api->draw_rounded_rect(sidebar_w + 20, item_y - 4, item_w, item_h, 4, 0xEDF4FC, fb);
+                }
+
+                uint8_t* icon = current_files[i].is_directory ? folder_icon : file_icon;
+                if (icon) api->draw_icon_scaled(sidebar_w + 30, item_y, 20, 20, icon, fb);
+                api->draw_string_scaled(sidebar_w + 60, item_y + 2, current_files[i].name, 0x333333, 70, fb);
+            }
+        }
     } else {
         api->draw_string_scaled(cx, cy, "Disks and Drives", 0x222222, 90, fb);
         
@@ -204,20 +284,59 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         uint32_t nav_bar_h = 36;
         uint32_t btn_y = title_bar_h + (nav_bar_h - 22) / 2;
         if (is_inside(mx, my, 10, btn_y - 2, 26, 26)) {
-            is_drive_opened = 0;
+            if (is_drive_opened) {
+                int len = 0; while (current_path[len]) len++;
+                if (len > 9) { // More than "Sysroot:/"
+                    if (current_path[len-1] == '/') current_path[--len] = 0;
+                    while (len > 9 && current_path[len-1] != '/') current_path[--len] = 0;
+                    if (len == 9) is_drive_opened = 0;
+                    else refresh_file_list(api);
+                } else {
+                    is_drive_opened = 0;
+                }
+            }
             return;
         }
 
-        uint32_t cx = sidebar_w + 40;
-        uint32_t cy = title_bar_h + nav_bar_h + 1 + 40;
-        uint32_t icon_y = cy + 60;
-        
-        int clicked_item = is_inside(mx, my, cx - 10, icon_y - 10, 320, 70);
-        if (clicked_item && is_selected && (current_ticks - last_click_tick) < 50) {
-            is_drive_opened = 1;
+        if (is_inside(mx, my, 44, btn_y - 2, 26, 26)) {
+            if (is_drive_opened) refresh_file_list(api);
+            return;
+        }
+
+        if (is_drive_opened) {
+            uint32_t content_y = title_bar_h + nav_bar_h + 1;
+            uint32_t cy = content_y + 40;
+            int found_click = 0;
+            for (int i = 0; i < file_count; i++) {
+                uint32_t item_y = cy + (i * 30);
+                uint32_t item_w = fb->framebuffer_width - sidebar_w - 80;
+                if (is_inside(mx, my, sidebar_w + 20, item_y - 4, item_w, 28)) {
+                    if (selected_file_index == i && (current_ticks - last_click_tick) < 50) {
+                        if (current_files[i].is_directory) {
+                            strcat_custom(current_path, current_files[i].name);
+                            strcat_custom(current_path, "/");
+                            refresh_file_list(api);
+                        }
+                    }
+                    selected_file_index = i;
+                    found_click = 1;
+                    break;
+                }
+            }
+            if (!found_click) selected_file_index = -1;
+        } else {
+            uint32_t cx = sidebar_w + 40;
+            uint32_t cy = title_bar_h + nav_bar_h + 1 + 40;
+            uint32_t icon_y = cy + 60;
+            int clicked_drive = is_inside(mx, my, cx - 10, icon_y - 10, 320, 70);
+            if (clicked_drive && is_selected && (current_ticks - last_click_tick) < 50) {
+                is_drive_opened = 1;
+                strcpy_custom(current_path, "Sysroot:/");
+                refresh_file_list(api);
+            }
+            is_selected = clicked_drive;
         }
         
-        is_selected = clicked_item;
         last_click_tick = current_ticks;
     }
 
@@ -229,6 +348,8 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             if (!disk_icon) disk_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
             back_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/back.bmp");
             reload_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/reload.bmp");
+            folder_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/folder.bmp");
+            file_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/unknown_file.bmp");
         }
 
         if (event == APP_EVENT_TICK) {
@@ -241,10 +362,24 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             hover_back = is_inside(mx, my, 10, btn_y - 2, 26, 26);
             hover_reload = is_inside(mx, my, 44, btn_y - 2, 26, 26);
 
-            uint32_t cx = sidebar_w + 40;
-            uint32_t cy = title_bar_h + nav_bar_h + 1 + 40;
-            uint32_t icon_y = cy + 60;
-            is_hovered = is_inside(mx, my, cx - 10, icon_y - 10, 320, 70);
+            if (is_drive_opened) {
+                uint32_t content_y = title_bar_h + nav_bar_h + 1;
+                uint32_t cy = content_y + 40;
+                hover_file_index = -1;
+                for (int i = 0; i < file_count; i++) {
+                    uint32_t item_y = cy + (i * 30);
+                    uint32_t item_w = fb->framebuffer_width - sidebar_w - 80;
+                    if (is_inside(mx, my, sidebar_w + 20, item_y - 4, item_w, 28)) {
+                        hover_file_index = i;
+                        break;
+                    }
+                }
+            } else {
+                uint32_t cx = sidebar_w + 40;
+                uint32_t cy = title_bar_h + nav_bar_h + 1 + 40;
+                uint32_t icon_y = cy + 60;
+                is_hovered = is_inside(mx, my, cx - 10, icon_y - 10, 320, 70);
+            }
         }
 
         struct multiboot_tag_framebuffer buffer_fb = *fb;
