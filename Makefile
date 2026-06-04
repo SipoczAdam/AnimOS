@@ -53,7 +53,7 @@ iso:
 
 # Disk Image
 hdd.img:
-	dd if=/dev/zero of=hdd.img bs=1M count=64
+	dd if=/dev/zero of=hdd.img bs=1M count=128
 	mkfs.fat -F 32 -n "SYSROOT" hdd.img
 	mmd -i hdd.img ::/AnimOS
 	mcopy -i hdd.img -s sysroot/AnimOS/* ::/AnimOS/
