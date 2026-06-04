@@ -4,6 +4,13 @@ static uint32_t title_bar_h = 40;
 static uint32_t sidebar_w = 200;
 static uint8_t* disk_icon = 0;
 
+static int is_hovered = 0;
+static int is_selected = 0;
+
+static int is_inside(int32_t mx, int32_t my, uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    return (mx >= (int32_t)x && mx <= (int32_t)(x + w) && my >= (int32_t)y && my <= (int32_t)(y + h));
+}
+
 static void itoa_custom(uint32_t n, char* s) {
     uint32_t i = 0, j;
     if (n == 0) { s[i++] = '0'; s[i] = 0; return; }
@@ -31,6 +38,19 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
 
     if (disk_icon) {
         uint32_t icon_y = cy + 60; // Increased space under header
+
+        // Selection/Hover highlight
+        uint32_t item_x = cx - 10;
+        uint32_t item_y = icon_y - 10;
+        uint32_t item_w = 320;
+        uint32_t item_h = 70;
+
+        if (is_selected) {
+            api->draw_rounded_rect(item_x, item_y, item_w, item_h, 4, 0xD7E8FA, fb);
+        } else if (is_hovered) {
+            api->draw_rounded_rect(item_x, item_y, item_w, item_h, 4, 0xEDF4FC, fb);
+        }
+
         uint32_t icon_size = 48;
         api->draw_icon_scaled(cx, icon_y, icon_size, icon_size, disk_icon, fb);
 
@@ -133,12 +153,28 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             api->window_minimized = 1;
             return;
         }
+
+        uint32_t cx = sidebar_w + 40;
+        uint32_t cy = title_bar_h + 40;
+        uint32_t icon_y = cy + 60;
+        is_selected = is_inside(mx, my, cx - 10, icon_y - 10, 320, 70);
     }
 
     if (event == APP_EVENT_INIT || event == APP_EVENT_TICK || event == APP_EVENT_CLICK) {
         if (event == APP_EVENT_INIT) {
             disk_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer.bmp");
             if (!disk_icon) disk_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
+        }
+
+        if (event == APP_EVENT_TICK) {
+            int32_t mx, my, wheel;
+            uint8_t clicked;
+            api->get_mouse_pos(&mx, &my, &clicked, &wheel);
+
+            uint32_t cx = sidebar_w + 40;
+            uint32_t cy = title_bar_h + 40;
+            uint32_t icon_y = cy + 60;
+            is_hovered = is_inside(mx, my, cx - 10, icon_y - 10, 320, 70);
         }
 
         struct multiboot_tag_framebuffer buffer_fb = *fb;
