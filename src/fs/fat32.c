@@ -174,10 +174,10 @@ static int find_entry(const char* path, struct fat32_directory_entry* out_entry)
                         if (*p == 0) { if (out_entry) *out_entry = *entry; return 0; }
                         found_in_path_step = 1;
                         // Reset LFN for next component
-                        for(int k=0; k<255; k++) lfn_buffer[k] = 0;
+                        for(int k=0; k<256; k++) lfn_buffer[k] = 0;
                         goto next_component;
                     }
-                    for(int k=0; k<255; k++) lfn_buffer[k] = 0;
+                    for(int k=0; k<256; k++) lfn_buffer[k] = 0;
                 }
             }
             dir_cluster = get_next_cluster(dir_cluster);
@@ -263,7 +263,6 @@ uint32_t fat32_get_used_space_mb() {
     return (uint32_t)(used_bytes / (1024 * 1024));
 }
 
-
 int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
     struct fat32_directory_entry entry;
     uint32_t dir_cluster;
@@ -300,7 +299,7 @@ int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
                         for(int k=0; k<5; k++) lfn_buffer[index + k] = (n1[k] == 0 || n1[k] == 0xFFFF) ? 0 : (char)(n1[k] & 0xFF);
                         for(int k=0; k<6; k++) lfn_buffer[index + 5 + k] = (n2[k] == 0 || n2[k] == 0xFFFF) ? 0 : (char)(n2[k] & 0xFF);
                         for(int k=0; k<2; k++) lfn_buffer[index + 11 + k] = (n3[k] == 0 || n3[k] == 0xFFFF) ? 0 : (char)(n3[k] & 0xFF);
-                        if (lfn->order & 0x40) lfn_buffer[index + 13] = 0;
+                        if (lfn->order & 0x40) lfn_buffer[index + 13] = 0; // Ensure some termination
                     }
                     continue;
                 }
@@ -351,4 +350,3 @@ int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
     }
     return buffer_offset;
 }
-
