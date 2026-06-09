@@ -211,7 +211,8 @@ int fat32_read_file(const char* path, uint8_t* buffer) {
             extern void kernel_ui_refresh_scaling();
             extern int is_system_busy;
             static uint32_t refresh_counter = 0;
-            if (refresh_counter++ % 32 == 0) {
+            uint32_t freq = is_system_busy ? 2 : 32;
+            if (refresh_counter++ % freq == 0) {
                 if (is_system_busy) kernel_ui_refresh_scaling();
                 else kernel_ui_refresh_simple();
             }

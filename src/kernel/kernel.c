@@ -508,7 +508,7 @@ void kernel_ui_refresh_scaling() {
     // Advance working frame if busy (with speed divider)
     static uint32_t animation_speed_divider = 0;
     if (is_system_busy && working_frames_count > 0) {
-        if (animation_speed_divider++ % 3 == 0) {
+        if (animation_speed_divider++ % 64 == 0) {
             current_working_frame = (current_working_frame + 1) % working_frames_count;
         }
     }
@@ -1194,12 +1194,24 @@ void run_app(const char* path, struct multiboot_tag_framebuffer* fb, app_event_t
     int idx = get_app_cache_index(path);
     if (idx < 0) return;
 
+    int is_fe_init = (idx == 0 && event == APP_EVENT_INIT);
+    if (is_fe_init) {
+        is_system_busy = 1;
+        current_working_frame = 0;
+    }
+
     uint8_t* app_memory = (uint8_t*)0x8000000;
     if (!app_bin_cache[idx]) {
         uint32_t size = vfs_get_file_size(path);
-        if (size == 0) return;
+        if (size == 0) {
+            if (is_fe_init) is_system_busy = 0;
+            return;
+        }
         app_bin_cache[idx] = (uint8_t*)malloc_custom(size);
-        if (vfs_read_file(path, app_bin_cache[idx]) != 0) return;
+        if (vfs_read_file(path, app_bin_cache[idx]) != 0) {
+            if (is_fe_init) is_system_busy = 0;
+            return;
+        }
         app_bin_size[idx] = size;
     }
     
@@ -1249,6 +1261,10 @@ void run_app(const char* path, struct multiboot_tag_framebuffer* fb, app_event_t
     
     app_entry_t entry = (app_entry_t)app_memory;
     entry(&kernel_api, fb, event);
+
+    if (is_fe_init) {
+        is_system_busy = 0;
+    }
 }
 
 void draw_preferences_window(struct multiboot_tag_framebuffer* fb, app_event_t event) { 
@@ -1341,15 +1357,17 @@ void draw_cursor_simple(int32_t mx, int32_t my, struct multiboot_tag_framebuffer
 void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot_addr) {
     if (!screen_backbuffer) return;
     struct multiboot_tag_framebuffer back_fb = *real_fb; back_fb.framebuffer_addr = (uint64_t)screen_backbuffer; back_fb.framebuffer_pitch = real_fb->framebuffer_width * 4; back_fb.framebuffer_bpp = 32;
-    draw_background(&back_fb);
-    
     int any_window_open = preferences_window_open || file_explorer_window_open;
-    int show_desktop = !any_window_open || !kernel_api.window_maximized || kernel_api.window_minimized;
+    int is_loading = (file_explorer_window_open && file_explorer_needs_init) || (preferences_window_open && preferences_needs_init);
     
-    if (show_desktop) {
-        draw_desktop_icons(&back_fb);
-        draw_dock(&back_fb); 
-        draw_status_bar(&back_fb);
+    if (!is_loading) {
+        draw_background(&back_fb);
+        int show_desktop = !any_window_open || !kernel_api.window_maximized || kernel_api.window_minimized;
+        if (show_desktop) {
+            draw_desktop_icons(&back_fb);
+            draw_dock(&back_fb); 
+            draw_status_bar(&back_fb);
+        }
     }
     
     if (any_window_open && active_app >= 0) {
