@@ -18,6 +18,7 @@ typedef struct {
 
 static file_entry_t current_files[128];
 static int file_count = 0;
+static int scroll_offset = 0;
 static char current_path[512] = "Local Disk (Sysroot:)/";
 static int hover_file_index = -1;
 static int selected_file_index = -1;
@@ -144,11 +145,21 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     uint32_t cy = content_y + 40;
 
     if (is_drive_opened) {
+        uint32_t visible_h = h - content_y;
+        int total_items_h = file_count * 30;
+        int max_scroll = (total_items_h > (int)visible_h - 60) ? (total_items_h - ((int)visible_h - 60)) : 0;
+        if (scroll_offset > max_scroll) scroll_offset = max_scroll;
+        if (scroll_offset < 0) scroll_offset = 0;
+
         if (file_count == 0) {
             api->draw_string_scaled(cx, cy, "This folder is empty.", 0x888888, 75, fb);
         } else {
             for (int i = 0; i < file_count; i++) {
-                uint32_t item_y = cy + (i * 30);
+                int item_y_final = (i * 30) - scroll_offset;
+                if (item_y_final + 30 < 0) continue;
+                if (item_y_final > (int)visible_h - 60) continue;
+
+                uint32_t item_y = cy + item_y_final;
                 uint32_t item_w = w - sidebar_w - 80;
                 uint32_t item_h = 28;
 
@@ -179,6 +190,18 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
                 
                 if (icon) api->draw_icon_scaled(sidebar_w + 30, item_y, 20, 20, icon, fb);
                 api->draw_string_scaled(sidebar_w + 60, item_y + 2, current_files[i].name, 0x333333, 70, fb);
+            }
+
+            if (max_scroll > 0) {
+                uint32_t sb_w = 8;
+                uint32_t sb_x = w - sb_w - 4;
+                uint32_t sb_y = content_y + 10;
+                uint32_t sb_h = h - content_y - 20;
+                api->draw_rect(sb_x, sb_y, sb_w, sb_h, 0xF4F4F4, fb);
+                uint32_t thumb_h = (sb_h * sb_h) / (sb_h + max_scroll);
+                if (thumb_h < 30) thumb_h = 30;
+                uint32_t thumb_y = sb_y + (scroll_offset * (sb_h - thumb_h)) / max_scroll;
+                api->draw_rounded_rect(sb_x, thumb_y, sb_w, thumb_h, 4, 0xCDCDCD, fb);
             }
         }
     } else {
@@ -278,6 +301,26 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
 
 __attribute__((section(".text.main")))
 void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t event) {
+    if (event == APP_EVENT_CLICK || event == APP_EVENT_TICK) {
+        int32_t mx, my, wheel;
+        uint8_t clicked;
+        api->get_mouse_pos(&mx, &my, &clicked, &wheel);
+
+        if (wheel != 0) {
+            uint32_t nav_bar_h = 36;
+            uint32_t content_y = title_bar_h + nav_bar_h + 1;
+            if (is_inside(mx, my, sidebar_w, content_y, fb->framebuffer_width - sidebar_w, fb->framebuffer_height - content_y)) {
+                scroll_offset -= wheel * 30;
+                
+                int total_items_h = file_count * 30;
+                int visible_h = fb->framebuffer_height - content_y;
+                int max_scroll = (total_items_h > (int)visible_h - 60) ? (total_items_h - ((int)visible_h - 60)) : 0;
+                if (scroll_offset > max_scroll) scroll_offset = max_scroll;
+                if (scroll_offset < 0) scroll_offset = 0;
+            }
+        }
+    }
+
     if (event == APP_EVENT_CLICK) {
         int32_t mx, my, wheel;
         uint8_t clicked;
@@ -327,9 +370,12 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         if (is_drive_opened) {
             uint32_t content_y = title_bar_h + nav_bar_h + 1;
             uint32_t cy = content_y + 40;
+            int visible_h = fb->framebuffer_height - content_y;
             int found_click = 0;
             for (int i = 0; i < file_count; i++) {
-                uint32_t item_y = cy + (i * 30);
+                int item_y_final = (i * 30) - scroll_offset;
+                if (item_y_final + 30 < 0 || item_y_final > (int)visible_h - 60) continue;
+                uint32_t item_y = cy + item_y_final;
                 uint32_t item_w = fb->framebuffer_width - sidebar_w - 80;
                 if (is_inside(mx, my, sidebar_w + 20, item_y - 4, item_w, 28)) {
                     if (selected_file_index == i && (current_ticks - last_click_tick) < 50) {
@@ -391,7 +437,9 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                 uint32_t cy = content_y + 40;
                 hover_file_index = -1;
                 for (int i = 0; i < file_count; i++) {
-                    uint32_t item_y = cy + (i * 30);
+                    int item_y_final = (i * 30) - scroll_offset;
+                    if (item_y_final + 30 < 0 || item_y_final > (int)(fb->framebuffer_height - cy - 20)) continue;
+                    uint32_t item_y = cy + item_y_final;
                     uint32_t item_w = fb->framebuffer_width - sidebar_w - 80;
                     if (is_inside(mx, my, sidebar_w + 20, item_y - 4, item_w, 28)) {
                         hover_file_index = i;
