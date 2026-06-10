@@ -9,6 +9,7 @@ static uint8_t* folder_icon = 0;
 static uint8_t* file_icon = 0;
 static uint8_t* exe_icon = 0;
 static uint8_t* bmp_icon = 0;
+static uint8_t* xml_icon = 0;
 static uint8_t* cursor_icon = 0;
 
 typedef struct {
@@ -179,6 +180,8 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
                             icon = exe_icon;
                         } else if (ext[0] == '.' && (ext[1] == 'b' || ext[1] == 'B') && (ext[2] == 'm' || ext[2] == 'M') && (ext[3] == 'p' || ext[3] == 'P')) {
                             icon = bmp_icon;
+                        } else if (ext[0] == '.' && (ext[1] == 'x' || ext[1] == 'X') && (ext[2] == 'm' || ext[2] == 'M') && (ext[3] == 'l' || ext[3] == 'L')) {
+                            icon = xml_icon;
                         } else if (ext[0] == '.' && (
                             ((ext[1] == 'c' || ext[1] == 'C') && (ext[2] == 'u' || ext[2] == 'U') && (ext[3] == 'r' || ext[3] == 'R')) ||
                             ((ext[1] == 'a' || ext[1] == 'A') && (ext[2] == 'n' || ext[2] == 'N') && (ext[3] == 'i' || ext[3] == 'I'))
@@ -431,6 +434,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             file_icon = api->file_icon;
             exe_icon = api->exe_icon;
             bmp_icon = api->bmp_icon;
+            xml_icon = api->xml_icon;
             cursor_icon = api->cursor_icon;
 
             refresh_file_list(api);

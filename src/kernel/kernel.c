@@ -66,6 +66,7 @@ uint8_t* folder_icon_data = 0;
 uint8_t* file_icon_data = 0;
 uint8_t* exe_icon_data = 0;
 uint8_t* bmp_icon_data = 0;
+uint8_t* xml_icon_data = 0;
 uint8_t* cursor_icon_data = 0;
 uint8_t* disk_icon_data = 0;
 uint8_t* back_icon_data = 0;
@@ -1184,6 +1185,7 @@ void init_kernel_api() {
     kernel_api.file_icon = file_icon_data;
     kernel_api.exe_icon = exe_icon_data;
     kernel_api.bmp_icon = bmp_icon_data;
+    kernel_api.xml_icon = xml_icon_data;
     kernel_api.cursor_icon = cursor_icon_data;
     kernel_api.disk_icon = disk_icon_data;
     kernel_api.back_icon = back_icon_data;
@@ -1779,6 +1781,7 @@ void kernel_main(uint64_t multiboot_addr) {
         file_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/unknown_file.bmp");
         exe_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/executable.bmp");
         bmp_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/bmp.bmp");
+        xml_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/xml.bmp");
         cursor_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/cursor.bmp");
         disk_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
         back_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/back.bmp");
