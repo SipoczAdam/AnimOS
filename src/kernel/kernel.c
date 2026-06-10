@@ -78,16 +78,15 @@ int32_t cursor_h = 32;
 int net_status = 0; 
 int selected_icon = -1; 
 int hover_icon = -1;    
-int preferences_window_open = 0;
-int file_explorer_window_open = 0;
+#define MAX_APPS 8
+int app_open_flags[MAX_APPS] = {0};
+int app_needs_init[MAX_APPS] = {0};
+int app_minimized[MAX_APPS] = {0, 0};
+int app_maximized[MAX_APPS] = {1, 1, 1, 1, 1, 1, 1, 1};
 int active_app = -1;
-int app_minimized[2] = {0, 0};
-int app_maximized[2] = {1, 1};
 uint32_t last_click_time = 0;
 uint32_t last_clicked_icon = -1;
 int dialog_state = 0; 
-int preferences_needs_init = 0;
-int file_explorer_needs_init = 0;
 uint32_t global_ram_mb = 0;
 static int desktop_ready = 0;
 
@@ -110,12 +109,12 @@ uint32_t menu_area_buffer[200 * 300];
 uint32_t icon_area_buffer[150 * 150]; 
 uint32_t preferences_window_buffer[1024 * 768]; 
 
-static uint8_t* app_bin_cache[2] = {0, 0};
-static uint32_t app_bin_size[2] = {0, 0};
-static const char* app_bin_paths[2] = {"Sysroot:/AnimOS/apps/file_explorer.bin", "Sysroot:/AnimOS/apps/preferences.bin"};
+static uint8_t* app_bin_cache[MAX_APPS] = {0};
+static uint32_t app_bin_size[MAX_APPS] = {0};
+static char* app_bin_paths[MAX_APPS] = {"Sysroot:/AnimOS/apps/file_explorer.bin", "Sysroot:/AnimOS/apps/preferences.bin", 0, 0, 0, 0, 0, 0};
 static int currently_loaded_app = -1;
-static uint8_t* app_state_buffers[2] = {0, 0};
-static int app_state_saved[2] = {0, 0};
+static uint8_t* app_state_buffers[MAX_APPS] = {0};
+static int app_state_saved[MAX_APPS] = {0};
 
 /* --- Forward Declarations --- */
 
@@ -141,7 +140,8 @@ void draw_status_bar(struct multiboot_tag_framebuffer* fb);
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb);
 void draw_power_menu(struct multiboot_tag_framebuffer* fb, int progress);
 void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const char* msg);
-void draw_preferences_window(struct multiboot_tag_framebuffer* fb, app_event_t event);
+void draw_app_window(int idx, struct multiboot_tag_framebuffer* fb, app_event_t event);
+void kernel_launch_app(const char* path);
 void init_kernel_api();
 void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot_addr);
 void redraw_desktop(struct multiboot_tag_framebuffer* fb);
@@ -861,17 +861,22 @@ void draw_dock(struct multiboot_tag_framebuffer* fb) {
 
     // App Icons in the middle
     {
-        uint8_t* app_icons[2] = { file_explorer_icon_data, preferences_icon_data };
-        int app_open_flags[2] = { file_explorer_window_open, preferences_window_open };
+        uint8_t* app_icons[MAX_APPS];
+        for (int i = 0; i < MAX_APPS; i++) {
+            if (i == 0) app_icons[i] = file_explorer_icon_data;
+            else if (i == 1) app_icons[i] = preferences_icon_data;
+            else app_icons[i] = exe_icon_data;
+        }
+        
         int icon_count = 0;
-        for (int i = 0; i < 2; i++) if (app_open_flags[i] && app_icons[i]) icon_count++;
+        for (int i = 0; i < MAX_APPS; i++) if (app_open_flags[i] && app_icons[i]) icon_count++;
         if (icon_count > 0) {
             uint32_t icon_size = 32;
             uint32_t gap = 12;
             uint32_t total_w = icon_count * icon_size + (icon_count - 1) * gap;
             uint32_t start_x = dock_x + (dock_w - total_w) / 2;
             int icon_index = 0;
-            for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < MAX_APPS; i++) {
                 if (!app_open_flags[i] || !app_icons[i]) continue;
                 uint32_t icon_x = start_x + icon_index * (icon_size + gap);
                 uint32_t icon_y = dock_y + (dock_h - icon_size) / 2;
@@ -908,7 +913,9 @@ void draw_status_bar(struct multiboot_tag_framebuffer* fb) {
 }
 
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
-    if ((preferences_window_open || file_explorer_window_open) && kernel_api.window_maximized && !kernel_api.window_minimized) return;
+    int any_window_open = 0;
+    for (int i = 0; i < MAX_APPS; i++) if (app_open_flags[i]) { any_window_open = 1; break; }
+    if (any_window_open && kernel_api.window_maximized && !kernel_api.window_minimized) return;
     uint32_t icon_xs[] = {30, 30}, icon_ys[] = {30, 130}; const char* labels[] = {"File explorer", "Preferences"}; uint8_t* icon_datas[] = {file_explorer_icon_data, preferences_icon_data};
     for (int i = 0; i < 2; i++) {
         if (!icon_datas[i]) continue;
@@ -1010,7 +1017,10 @@ void draw_dialog(struct multiboot_tag_framebuffer* fb, const char* title, const 
 void get_mouse_pos(int32_t* mx, int32_t* my, uint8_t* clicked, int32_t* wheel) { 
     *mx = frame_mx; *my = frame_my; *clicked = frame_clicked;
     *wheel = frame_wheel;
-    if (!kernel_api.window_maximized && (preferences_window_open || file_explorer_window_open)) {
+    int any_window_open = 0;
+    for (int i = 0; i < MAX_APPS; i++) if (app_open_flags[i]) { any_window_open = 1; break; }
+
+    if (!kernel_api.window_maximized && any_window_open) {
         uint32_t win_w = 800, win_h = 600;
         *mx -= (screen_w - win_w) / 2;
         *my -= (screen_h - win_h) / 2;
@@ -1205,6 +1215,7 @@ void init_kernel_api() {
     kernel_api.get_primary_button = kernel_get_primary_button;
     kernel_api.get_mouse_button_state = kernel_get_mouse_button_state;
     kernel_api.load_asset = load_asset;
+    kernel_api.launch_app = kernel_launch_app;
 
     get_cpu_brand(kernel_api.cpu_brand);
     
@@ -1230,8 +1241,9 @@ void init_kernel_api() {
 static uint8_t* preferences_bin_cache = 0; static uint32_t preferences_bin_size = 0;
 
 static int get_app_cache_index(const char* path) {
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < MAX_APPS; i++) {
         const char* a = app_bin_paths[i];
+        if (!a) continue;
         const char* b = path;
         int equal = 1;
         while (*a && *b) {
@@ -1320,9 +1332,11 @@ void run_app(const char* path, struct multiboot_tag_framebuffer* fb, app_event_t
     }
 }
 
-void draw_preferences_window(struct multiboot_tag_framebuffer* fb, app_event_t event) { 
-    if (kernel_api.window_maximized) {
-        run_app("Sysroot:/AnimOS/apps/preferences.bin", fb, event);
+void draw_app_window(int idx, struct multiboot_tag_framebuffer* fb, app_event_t event) {
+    if (idx < 0 || idx >= MAX_APPS || !app_bin_paths[idx]) return;
+    
+    if (app_maximized[idx]) {
+        run_app(app_bin_paths[idx], fb, event);
     } else {
         uint32_t win_w = 800, win_h = 600;
         uint32_t win_x = (fb->framebuffer_width - win_w) / 2, win_y = (fb->framebuffer_height - win_h) / 2;
@@ -1330,21 +1344,40 @@ void draw_preferences_window(struct multiboot_tag_framebuffer* fb, app_event_t e
         struct multiboot_tag_framebuffer vfb = *fb;
         vfb.framebuffer_width = win_w; vfb.framebuffer_height = win_h;
         vfb.framebuffer_addr += win_y * fb->framebuffer_pitch + win_x * (fb->framebuffer_bpp / 8);
-        run_app("Sysroot:/AnimOS/apps/preferences.bin", &vfb, event);
+        run_app(app_bin_paths[idx], &vfb, event);
     }
 }
 
-void draw_file_explorer_window(struct multiboot_tag_framebuffer* fb, app_event_t event) {
-    if (kernel_api.window_maximized) {
-        run_app("Sysroot:/AnimOS/apps/file_explorer.bin", fb, event);
-    } else {
-        uint32_t win_w = 800, win_h = 600;
-        uint32_t win_x = (fb->framebuffer_width - win_w) / 2, win_y = (fb->framebuffer_height - win_h) / 2;
+void kernel_launch_app(const char* path) {
+    if (!path) return;
+    int idx = get_app_cache_index(path);
+    if (idx < 0) {
+        // Find empty slot
+        for (int i = 0; i < MAX_APPS; i++) {
+            if (!app_bin_paths[i]) {
+                uint32_t len = 0; while (path[len]) len++;
+                char* new_path = (char*)malloc_custom(len + 1);
+                strcpy_custom(new_path, path);
+                app_bin_paths[i] = new_path;
+                idx = i;
+                break;
+            }
+        }
+    }
+    
+    if (idx >= 0) {
+        // Save current app state if any
+        if (active_app >= 0) {
+            app_maximized[active_app] = kernel_api.window_maximized;
+            app_minimized[active_app] = kernel_api.window_minimized;
+        }
         
-        struct multiboot_tag_framebuffer vfb = *fb;
-        vfb.framebuffer_width = win_w; vfb.framebuffer_height = win_h;
-        vfb.framebuffer_addr += win_y * fb->framebuffer_pitch + win_x * (fb->framebuffer_bpp / 8);
-        run_app("Sysroot:/AnimOS/apps/file_explorer.bin", &vfb, event);
+        app_open_flags[idx] = 1;
+        app_needs_init[idx] = 1;
+        active_app = idx;
+        app_minimized[idx] = 0;
+        kernel_api.window_minimized = 0;
+        kernel_api.window_maximized = app_maximized[idx];
     }
 }
 
@@ -1410,8 +1443,11 @@ void draw_cursor_simple(int32_t mx, int32_t my, struct multiboot_tag_framebuffer
 void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot_addr) {
     if (!screen_backbuffer) return;
     struct multiboot_tag_framebuffer back_fb = *real_fb; back_fb.framebuffer_addr = (uint64_t)screen_backbuffer; back_fb.framebuffer_pitch = real_fb->framebuffer_width * 4; back_fb.framebuffer_bpp = 32;
-    int any_window_open = preferences_window_open || file_explorer_window_open;
-    int is_loading = (file_explorer_window_open && file_explorer_needs_init) || (preferences_window_open && preferences_needs_init);
+    
+    int any_window_open = 0;
+    for (int i = 0; i < MAX_APPS; i++) if (app_open_flags[i]) { any_window_open = 1; break; }
+    
+    int is_loading = (active_app >= 0 && app_open_flags[active_app] && app_needs_init[active_app]);
     
     if (!is_loading) {
         draw_background(&back_fb);
@@ -1425,16 +1461,17 @@ void compose_frame(struct multiboot_tag_framebuffer* real_fb, uint64_t multiboot
     
     if (any_window_open && active_app >= 0) {
         if (!kernel_api.window_minimized) {
-            if (active_app == 0) draw_file_explorer_window(&back_fb, file_explorer_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK);
-            else draw_preferences_window(&back_fb, preferences_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK);
+            draw_app_window(active_app, &back_fb, app_needs_init[active_app] ? APP_EVENT_INIT : APP_EVENT_TICK);
         } else {
             struct multiboot_tag_framebuffer dummy_fb = back_fb;
             dummy_fb.framebuffer_addr = (uint64_t)preferences_window_buffer;
-            if (active_app == 0) run_app("Sysroot:/AnimOS/apps/file_explorer.bin", &dummy_fb, file_explorer_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK);
-            else run_app("Sysroot:/AnimOS/apps/preferences.bin", &dummy_fb, preferences_needs_init ? APP_EVENT_INIT : APP_EVENT_TICK);
+            run_app(app_bin_paths[active_app], &dummy_fb, app_needs_init[active_app] ? APP_EVENT_INIT : APP_EVENT_TICK);
         }
-        if (active_app == 0) { file_explorer_needs_init = 0; app_maximized[0] = kernel_api.window_maximized; app_minimized[0] = kernel_api.window_minimized; }
-        else if (active_app == 1) { preferences_needs_init = 0; app_maximized[1] = kernel_api.window_maximized; app_minimized[1] = kernel_api.window_minimized; }
+        if (active_app >= 0) {
+            app_needs_init[active_app] = 0;
+            app_maximized[active_app] = kernel_api.window_maximized;
+            app_minimized[active_app] = kernel_api.window_minimized;
+        }
     }
     
     if (power_menu_progress > 0) draw_power_menu(&back_fb, power_menu_progress);
@@ -1525,7 +1562,7 @@ void keyboard_handler_main() {
         if (!(status & 0x20)) {
             uint8_t scancode = inb(0x60);
             if (scancode == 0x5B || scancode == 0x5C) {
-                if (!preferences_window_open || !kernel_api.window_maximized) {
+                if (active_app < 0 || !kernel_api.window_maximized) {
                     power_menu_open = !power_menu_open;
                 }
             }
@@ -1772,14 +1809,15 @@ void kernel_main(uint64_t multiboot_addr) {
             int32_t mx = frame_mx, my = frame_my;
             
             // 1. Calculate Hit Areas
-            int any_window_open = preferences_window_open || file_explorer_window_open;
+            int any_window_open = 0;
+            for (int i = 0; i < MAX_APPS; i++) if (app_open_flags[i]) { any_window_open = 1; break; }
+            
             if (any_window_open && active_app < 0) {
-                if (file_explorer_window_open) active_app = 0;
-                else if (preferences_window_open) active_app = 1;
+                for (int i = 0; i < MAX_APPS; i++) if (app_open_flags[i]) { active_app = i; break; }
             }
             int window_covers_desktop = any_window_open && kernel_api.window_maximized && !kernel_api.window_minimized;
             int over_window = 0;
-            if (any_window_open && !kernel_api.window_minimized) {
+            if (any_window_open && !kernel_api.window_minimized && active_app >= 0) {
                 if (kernel_api.window_maximized) over_window = 1;
                 else {
                     uint32_t win_w = 800, win_h = 600;
@@ -1850,21 +1888,17 @@ void kernel_main(uint64_t multiboot_addr) {
                         close_y = (screen_h - win_h) / 2 + (40 - 22) / 2;
                     }
                     if (mx >= (int32_t)close_x && mx <= (int32_t)(close_x + 22) && my >= (int32_t)close_y && my <= (int32_t)(close_y + 22)) {
-                        if (active_app >= 0) {
-                            app_state_saved[active_app] = 0;
-                        }
-                        if (active_app == 0) file_explorer_window_open = 0;
-                        else if (active_app == 1) preferences_window_open = 0;
-                        if (file_explorer_window_open) active_app = 0;
-                        else if (preferences_window_open) active_app = 1;
-                        else active_app = -1;
+                        app_open_flags[active_app] = 0;
+                        app_state_saved[active_app] = 0;
+                        int next_app = -1;
+                        for (int i = 0; i < MAX_APPS; i++) if (app_open_flags[i]) { next_app = i; break; }
+                        active_app = next_app;
                         if (active_app >= 0) {
                             kernel_api.window_maximized = app_maximized[active_app];
                             kernel_api.window_minimized = app_minimized[active_app];
                         }
                     } else {
-                        if (active_app == 0) draw_file_explorer_window(fb, APP_EVENT_CLICK);
-                        else if (active_app == 1) draw_preferences_window(fb, APP_EVENT_CLICK);
+                        draw_app_window(active_app, fb, APP_EVENT_CLICK);
                     }
                     click_handled = 1;
                 }
@@ -1879,17 +1913,16 @@ void kernel_main(uint64_t multiboot_addr) {
                         uint32_t margin = 20, dock_h = 55, dock_x = margin, dock_w = fb->framebuffer_width - 2 * margin;
                         uint32_t dock_y = fb->framebuffer_height - dock_h - margin;
                         
-                        int dock_open[2] = { file_explorer_window_open, preferences_window_open };
                         int icon_index = 0;
                         uint32_t icon_size = 32;
                         uint32_t gap = 12;
                         int icon_count = 0;
-                        for (int i = 0; i < 2; i++) if (dock_open[i]) icon_count++;
+                        for (int i = 0; i < MAX_APPS; i++) if (app_open_flags[i]) icon_count++;
                         if (icon_count > 0) {
                             uint32_t total_w = icon_count * icon_size + (icon_count - 1) * gap;
                             uint32_t start_x = dock_x + (dock_w - total_w) / 2;
-                            for (int i = 0; i < 2; i++) {
-                                if (!dock_open[i]) continue;
+                            for (int i = 0; i < MAX_APPS; i++) {
+                                if (!app_open_flags[i]) continue;
                                 uint32_t icon_x = start_x + icon_index * (icon_size + gap);
                                 uint32_t icon_y = dock_y + (dock_h - icon_size) / 2;
                                 if (mx >= (int32_t)icon_x && mx <= (int32_t)(icon_x + icon_size) && my >= (int32_t)icon_y && my <= (int32_t)(icon_y + icon_size)) {
@@ -1908,7 +1941,6 @@ void kernel_main(uint64_t multiboot_addr) {
                                         app_minimized[i] = 0;
                                         kernel_api.window_minimized = 0;
                                         kernel_api.window_maximized = app_maximized[i];
-                                        // Don't re-initialize, just restore state
                                     }
                                     click_handled = 1;
                                     break;
@@ -1924,64 +1956,31 @@ void kernel_main(uint64_t multiboot_addr) {
                     if (hover_icon != -1) {
                         if (hover_icon == last_clicked_icon && (ticks - last_click_time) < 50) {
                             int app_id = hover_icon;
-                            if (app_id == 0) {
-                                if (file_explorer_window_open) {
-                                    if (active_app == 0) {
-                                        app_minimized[0] = 0;
-                                        kernel_api.window_minimized = 0;
-                                    } else {
-                                        // Save the current active app state before switching
-                                        if (active_app >= 0) {
-                                            app_maximized[active_app] = kernel_api.window_maximized;
-                                            app_minimized[active_app] = kernel_api.window_minimized;
-                                        }
-                                        // Switch to file explorer
-                                        active_app = 0;
-                                        kernel_api.window_minimized = app_minimized[0];
-                                        kernel_api.window_maximized = app_maximized[0];
-                                    }
+                            if (app_open_flags[app_id]) {
+                                if (active_app == app_id) {
+                                    app_minimized[app_id] = 0;
+                                    kernel_api.window_minimized = 0;
                                 } else {
-                                    // Save the current active app state before opening new app
                                     if (active_app >= 0) {
                                         app_maximized[active_app] = kernel_api.window_maximized;
                                         app_minimized[active_app] = kernel_api.window_minimized;
                                     }
-                                    file_explorer_window_open = 1;
-                                    file_explorer_needs_init = 1;
-                                    active_app = 0;
-                                    app_minimized[0] = 0;
+                                    active_app = app_id;
+                                    app_minimized[app_id] = 0;
                                     kernel_api.window_minimized = 0;
-                                    kernel_api.window_maximized = app_maximized[0];
+                                    kernel_api.window_maximized = app_maximized[app_id];
                                 }
                             } else {
-                                if (preferences_window_open) {
-                                    if (active_app == 1) {
-                                        app_minimized[1] = 0;
-                                        kernel_api.window_minimized = 0;
-                                    } else {
-                                        // Save the current active app state before switching
-                                        if (active_app >= 0) {
-                                            app_maximized[active_app] = kernel_api.window_maximized;
-                                            app_minimized[active_app] = kernel_api.window_minimized;
-                                        }
-                                        // Switch to preferences
-                                        active_app = 1;
-                                        kernel_api.window_minimized = app_minimized[1];
-                                        kernel_api.window_maximized = app_maximized[1];
-                                    }
-                                } else {
-                                    // Save the current active app state before opening new app
-                                    if (active_app >= 0) {
-                                        app_maximized[active_app] = kernel_api.window_maximized;
-                                        app_minimized[active_app] = kernel_api.window_minimized;
-                                    }
-                                    preferences_window_open = 1;
-                                    preferences_needs_init = 1;
-                                    active_app = 1;
-                                    app_minimized[1] = 0;
-                                    kernel_api.window_minimized = 0;
-                                    kernel_api.window_maximized = app_maximized[1];
+                                if (active_app >= 0) {
+                                    app_maximized[active_app] = kernel_api.window_maximized;
+                                    app_minimized[active_app] = kernel_api.window_minimized;
                                 }
+                                app_open_flags[app_id] = 1;
+                                app_needs_init[app_id] = 1;
+                                active_app = app_id;
+                                app_minimized[app_id] = 0;
+                                kernel_api.window_minimized = 0;
+                                kernel_api.window_maximized = app_maximized[app_id];
                             }
                         }
                         selected_icon = hover_icon; last_clicked_icon = hover_icon; last_click_time = ticks;
@@ -1992,8 +1991,8 @@ void kernel_main(uint64_t multiboot_addr) {
 
             // Ensure app state is correctly synced after any event handling
             if (any_window_open && active_app >= 0) {
-                if (active_app == 0) { app_maximized[0] = kernel_api.window_maximized; app_minimized[0] = kernel_api.window_minimized; }
-                else if (active_app == 1) { app_maximized[1] = kernel_api.window_maximized; app_minimized[1] = kernel_api.window_minimized; }
+                app_maximized[active_app] = kernel_api.window_maximized;
+                app_minimized[active_app] = kernel_api.window_minimized;
             }
 
             compose_frame(fb, multiboot_addr); kernel_yield(); msleep(10);

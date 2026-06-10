@@ -58,6 +58,7 @@ typedef struct {
     int (*get_primary_button)();
     uint8_t (*get_mouse_button_state)();
     uint8_t* (*load_asset)(const char* path);
+    void (*launch_app)(const char* path);
 
     // System Info
     char cpu_brand[49];

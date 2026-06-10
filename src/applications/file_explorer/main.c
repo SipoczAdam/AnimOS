@@ -383,6 +383,20 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                             strcat_custom(current_path, current_files[i].name);
                             strcat_custom(current_path, "/");
                             refresh_file_list(api);
+                        } else {
+                            const char* name = current_files[i].name;
+                            int name_len = 0; while (name[name_len]) name_len++;
+                            if (name_len > 4 && name[name_len-4] == '.' && 
+                               (name[name_len-3] == 'b' || name[name_len-3] == 'B') && 
+                               (name[name_len-2] == 'i' || name[name_len-2] == 'I') && 
+                               (name[name_len-1] == 'n' || name[name_len-1] == 'N')) {
+                                if (strcmp_custom(name, "file_explorer.bin") != 0 && strcmp_custom(name, "FILE_EXPLORER.BIN") != 0) {
+                                    char full_path[512];
+                                    strcpy_custom(full_path, current_path);
+                                    strcat_custom(full_path, name);
+                                    api->launch_app(full_path);
+                                }
+                            }
                         }
                     }
                     selected_file_index = i;
