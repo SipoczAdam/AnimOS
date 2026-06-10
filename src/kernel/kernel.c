@@ -507,11 +507,21 @@ void kernel_ui_refresh_scaling() {
 
     // Advance working frame if busy (with speed divider)
     static uint32_t animation_speed_divider = 0;
+    static int last_busy_state = 0;
     if (is_system_busy && working_frames_count > 0) {
-        if (animation_speed_divider++ % 64 == 0) {
+        if (!last_busy_state) {
+            animation_speed_divider = 0;
+            current_working_frame = 0;
+        }
+
+        if (++animation_speed_divider >= 32) {
+            animation_speed_divider = 0;
             current_working_frame = (current_working_frame + 1) % working_frames_count;
         }
+    } else {
+        animation_speed_divider = 0;
     }
+    last_busy_state = is_system_busy;
 
     // Draw new cursor and save its position
     draw_cursor_simple(mouse_x, mouse_y, global_fb);

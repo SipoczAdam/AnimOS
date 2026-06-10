@@ -9,4 +9,4 @@ echo "Converting hdd.img to vdi.img..."
 vboxmanage convertfromraw "hdd.img" "hdd.vdi" --format VDI
 
 echo "Running AnimOS..."
-qemu-system-x86_64 -boot d -cdrom animos.iso -drive file=hdd.img,format=raw -m 6G -net nic,model=e1000 -net user
+qemu-system-x86_64 -boot d -cdrom animos.iso -drive file=hdd.img,format=raw -m 2G -net nic,model=e1000 -net user
