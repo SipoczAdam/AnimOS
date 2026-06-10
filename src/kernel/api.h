@@ -12,6 +12,7 @@ typedef struct {
     void (*draw_string_scaled)(uint32_t x, uint32_t y, const char* str, uint32_t color, int scale_pct, struct multiboot_tag_framebuffer* fb);
     uint32_t (*get_string_width_scaled)(const char* str, int scale_pct);
     void (*draw_icon_scaled)(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target_h, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb);
+    void (*draw_icon_scaled_nn)(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target_h, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb);
     
     // Assets pointers
     uint8_t* close_icon;
@@ -19,6 +20,16 @@ typedef struct {
     uint8_t* minimize_icon;
     uint8_t* boot_logo;
     uint32_t* window_buffer;
+
+    // Common shared icons
+    uint8_t* folder_icon;
+    uint8_t* file_icon;
+    uint8_t* exe_icon;
+    uint8_t* bmp_icon;
+    uint8_t* cursor_icon;
+    uint8_t* disk_icon;
+    uint8_t* back_icon;
+    uint8_t* reload_icon;
 
     void (*draw_rect)(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color, struct multiboot_tag_framebuffer* fb);
     void (*draw_rounded_rect)(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t radius, uint32_t color, struct multiboot_tag_framebuffer* fb);

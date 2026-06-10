@@ -409,19 +409,18 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
 
     if (event == APP_EVENT_INIT || event == APP_EVENT_TICK || event == APP_EVENT_CLICK) {
         if (event == APP_EVENT_TICK) current_ticks++;
-
         if (event == APP_EVENT_INIT) {
-            disk_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer.bmp");
-            if (!disk_icon) disk_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
-            back_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/back.bmp");
-            reload_icon = api->load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/reload.bmp");
-            folder_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/folder.bmp");
-            file_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/unknown_file.bmp");
-            exe_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/executable.bmp");
-            bmp_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/bmp.bmp");
-            cursor_icon = api->load_asset("Sysroot:/AnimOS/assets/mime_types/cursor.bmp");
-        }
+            disk_icon = api->disk_icon;
+            back_icon = api->back_icon;
+            reload_icon = api->reload_icon;
+            folder_icon = api->folder_icon;
+            file_icon = api->file_icon;
+            exe_icon = api->exe_icon;
+            bmp_icon = api->bmp_icon;
+            cursor_icon = api->cursor_icon;
 
+            refresh_file_list(api);
+        }
         if (event == APP_EVENT_TICK) {
             int32_t mx, my, wheel;
             uint8_t clicked;

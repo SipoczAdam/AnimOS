@@ -62,6 +62,14 @@ uint8_t* boot_logo_data = 0;
 uint8_t* close_icon_data = 0;
 uint8_t* minimize_icon_data = 0;
 uint8_t* maximize_icon_data = 0;
+uint8_t* folder_icon_data = 0;
+uint8_t* file_icon_data = 0;
+uint8_t* exe_icon_data = 0;
+uint8_t* bmp_icon_data = 0;
+uint8_t* cursor_icon_data = 0;
+uint8_t* disk_icon_data = 0;
+uint8_t* back_icon_data = 0;
+uint8_t* reload_icon_data = 0;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -127,6 +135,7 @@ void draw_string_scaled(uint32_t x, uint32_t y, const char* str, uint32_t color,
 uint32_t get_string_width(const char* str);
 uint32_t get_string_width_scaled(const char* str, int scale_pct);
 void draw_icon_scaled(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target_h, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb);
+void draw_icon_scaled_nn(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target_h, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb);
 void draw_dock(struct multiboot_tag_framebuffer* fb);
 void draw_status_bar(struct multiboot_tag_framebuffer* fb);
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb);
@@ -787,6 +796,28 @@ void draw_icon_scaled(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target
     }
 }
 
+void draw_icon_scaled_nn(uint32_t x, uint32_t y, uint32_t target_w, uint32_t target_h, uint8_t* bmp_data, struct multiboot_tag_framebuffer* fb) {
+    if (!bmp_data) return;
+    struct bmp_file_header* bfh = (struct bmp_file_header*)bmp_data; struct bmp_info_header* bih = (struct bmp_info_header*)(bmp_data + sizeof(struct bmp_file_header));
+    uint8_t* pixels = bmp_data + bfh->bfOffBits; int32_t w = bih->biWidth, h = bih->biHeight, abs_h = h < 0 ? -h : h; uint32_t bpp = bih->biBitCount, row_size = (w * (bpp / 8) + 3) & ~3;
+    for (uint32_t iy = 0; iy < target_h; iy++) {
+        uint32_t sy_raw = iy * abs_h / target_h;
+        int32_t src_y = (h > 0) ? (abs_h - 1 - (int32_t)sy_raw) : (int32_t)sy_raw;
+        uint8_t* src_row = pixels + (src_y * row_size);
+        for (uint32_t ix = 0; ix < target_w; ix++) {
+            uint32_t sx = ix * w / target_w; uint8_t* p = src_row + (sx * (bpp / 8));
+            uint32_t color = (p[2] << 16) | (p[1] << 8) | p[0]; uint8_t alpha = (bpp == 32) ? p[3] : 255;
+            if (alpha == 0) continue;
+            if (alpha < 255) {
+                uint8_t* screen = (uint8_t*)fb->framebuffer_addr; uint32_t offset = (y + iy) * fb->framebuffer_pitch + (x + ix) * (fb->framebuffer_bpp / 8);
+                uint32_t bg = (fb->framebuffer_bpp == 32) ? *(uint32_t*)(screen + offset) : (screen[offset+2] << 16) | (screen[offset+1] << 8) | screen[offset];
+                color = blend_colors(bg, color, alpha);
+            }
+            draw_pixel(x + ix, y + iy, color, fb);
+        }
+    }
+}
+
 void draw_boot_progress_bar(uint32_t x, uint32_t y, uint32_t w, uint32_t h, int progress, struct multiboot_tag_framebuffer* fb) {
     uint32_t bg_color = 0x222222, border_color = 0x444444;
     for (uint32_t iy = 0; iy < h; iy++) {
@@ -1134,8 +1165,20 @@ int kernel_get_timezone_offset() {
 void init_kernel_api() {
     kernel_api.draw_pixel = draw_pixel; kernel_api.blend_colors = blend_colors; kernel_api.get_wallpaper_pixel = get_wallpaper_pixel_fast;
     kernel_api.draw_string_scaled = draw_string_scaled; kernel_api.get_string_width_scaled = get_string_width_scaled; kernel_api.draw_icon_scaled = draw_icon_scaled;
+    kernel_api.draw_icon_scaled_nn = draw_icon_scaled_nn;
     kernel_api.close_icon = close_icon_data; kernel_api.maximize_icon = maximize_icon_data; kernel_api.minimize_icon = minimize_icon_data;
     kernel_api.boot_logo = boot_logo_data;
+    
+    // Shared Icons
+    kernel_api.folder_icon = folder_icon_data;
+    kernel_api.file_icon = file_icon_data;
+    kernel_api.exe_icon = exe_icon_data;
+    kernel_api.bmp_icon = bmp_icon_data;
+    kernel_api.cursor_icon = cursor_icon_data;
+    kernel_api.disk_icon = disk_icon_data;
+    kernel_api.back_icon = back_icon_data;
+    kernel_api.reload_icon = reload_icon_data;
+
     kernel_api.window_buffer = preferences_window_buffer; kernel_api.draw_rect = draw_rect; 
     kernel_api.draw_rounded_rect = draw_rounded_rect;
     kernel_api.blit_buffer = blit_buffer;
@@ -1693,6 +1736,17 @@ void kernel_main(uint64_t multiboot_addr) {
         file_explorer_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/file_explorer.bmp"); preferences_icon_data = load_asset("Sysroot:/AnimOS/assets/icons/preferences.bmp");
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 60, fb);
         close_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/close.bmp"); minimize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/minimize.bmp"); maximize_icon_data = load_asset("Sysroot:/AnimOS/assets/ui/maximize.bmp");
+        
+        // Load common shared icons
+        folder_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/folder.bmp");
+        file_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/unknown_file.bmp");
+        exe_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/executable.bmp");
+        bmp_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/bmp.bmp");
+        cursor_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/cursor.bmp");
+        disk_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
+        back_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/back.bmp");
+        reload_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/reload.bmp");
+
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 75, fb);
         init_kernel_api();
         struct pci_device net_dev;
