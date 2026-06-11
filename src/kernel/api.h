@@ -50,6 +50,8 @@ typedef struct {
     const char* (*net_get_ntp_server)();
     const char* (*get_timezone)();
     int (*get_timezone_offset)();
+    int (*get_base_timezone_offset)();
+    int (*is_ntp_automatic)();
     void (*set_timezone_offset)(int offset);
     void (*set_mouse_speed)(int speed);
     int (*get_mouse_speed)();

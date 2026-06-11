@@ -479,11 +479,29 @@ __attribute__((section(".text.main")))
 void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t event) {
     if (event == APP_EVENT_INIT) {
         selected_menu = 0;
-        for (int i = 0; i < 1024; i++) wallpaper_list[i] = 0;
-        api->list_dir("Sysroot:/AnimOS/assets/wallpapers", wallpaper_list, 1024);
+        for (int i = 0; i < 2048; i++) wallpaper_list[i] = 0;
+        api->list_dir("Sysroot:/AnimOS/assets/wallpapers", wallpaper_list, 2048);
         mouse_speed_val = api->get_mouse_speed();
         mouse_scroll_val = api->get_scroll_speed();
         selected_mouse_btn = api->get_primary_button();
+
+        if (api->is_ntp_automatic()) {
+            selected_tz = 0; // NTP (Automatic)
+        } else {
+            int current_offset = api->get_base_timezone_offset();
+            int offsets[] = {-999, 0, 0, 1, 2, 3, 8, 9, -5, -8};
+            selected_tz = 1; // Default to UTC if no match
+            for (int i = 1; i < 10; i++) {
+                if (offsets[i] == current_offset) {
+                    selected_tz = i;
+                    // If multiple match (like UTC/London), we take the first one (UTC)
+                    // or maybe we should prefer index 3 for Budapest if offset is 1.
+                    if (current_offset == 1) { selected_tz = 3; break; }
+                    if (current_offset == 0) { selected_tz = 1; break; }
+                    break;
+                }
+            }
+        }
     }
 
     if (event == APP_EVENT_CLICK || event == APP_EVENT_TICK) {

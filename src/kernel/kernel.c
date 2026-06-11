@@ -1081,13 +1081,21 @@ static int current_timezone_offset = 1;
 static int ntp_automatic_mode = 1;
 
 void set_timezone_offset(int offset) {
-    if (offset == -999) { 
+    if (offset == -999) {
         ntp_automatic_mode = 1;
         current_timezone_offset = 1; // Default to GMT+1 (Budapest/Paris base)
     } else {
         ntp_automatic_mode = 0;
         current_timezone_offset = offset;
     }
+}
+
+int kernel_get_base_timezone_offset() {
+    return current_timezone_offset;
+}
+
+int kernel_is_ntp_automatic() {
+    return ntp_automatic_mode;
 }
 
 void kernel_set_mouse_speed(int speed) {
@@ -1208,6 +1216,8 @@ void init_kernel_api() {
     kernel_api.net_get_ntp_server = net_get_ntp_server;
     kernel_api.get_timezone = kernel_get_timezone;
     kernel_api.get_timezone_offset = kernel_get_timezone_offset;
+    kernel_api.get_base_timezone_offset = kernel_get_base_timezone_offset;
+    kernel_api.is_ntp_automatic = kernel_is_ntp_automatic;
     kernel_api.set_timezone_offset = set_timezone_offset;
     kernel_api.set_mouse_speed = kernel_set_mouse_speed;
     kernel_api.get_mouse_speed = kernel_get_mouse_speed;
