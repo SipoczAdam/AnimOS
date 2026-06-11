@@ -370,9 +370,19 @@ int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
                     while (name[name_len]) name_len++;
                     char date_str[17];
                     format_fat_date(d_entry->last_mod_date, d_entry->last_mod_time, date_str);
-                    if (buffer_offset + name_len + 16 + 2 < max_size) {
+                    
+                    uint32_t size = d_entry->attributes & 0x10 ? 0 : d_entry->size;
+                    
+                    if (buffer_offset + name_len + 16 + 4 + 2 < max_size) {
                         buffer[buffer_offset++] = (d_entry->attributes & 0x10) ? 'D' : 'F';
                         for (int k = 0; k < 16; k++) buffer[buffer_offset++] = date_str[k];
+                        
+                        // Add size (4 bytes)
+                        buffer[buffer_offset++] = (size >> 24) & 0xFF;
+                        buffer[buffer_offset++] = (size >> 16) & 0xFF;
+                        buffer[buffer_offset++] = (size >> 8) & 0xFF;
+                        buffer[buffer_offset++] = size & 0xFF;
+
                         for (int k = 0; k < name_len; k++) buffer[buffer_offset++] = name[k];
                         buffer[buffer_offset++] = '\n';
                     } else {

@@ -152,6 +152,7 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
             int k = 0;
             if (*p == 'D' || *p == 'F') p++; // Skip prefix
             p += 16; // Skip date (16 chars)
+            p += 4;  // Skip size (4 chars)
             while (*p && *p != '\n' && k < 255) name[k++] = *p++;
             name[k] = 0;
             if (*p == '\n') p++;
@@ -612,6 +613,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                     int k = 0;
                     if (*p == 'D' || *p == 'F') p++; // Skip prefix
                     p += 16; // Skip date (16 chars)
+                    p += 4;  // Skip size (4 chars)
                     while (*p && *p != '\n' && k < 255) name[k++] = *p++;
                     name[k] = 0;
                     if (*p == '\n') p++;

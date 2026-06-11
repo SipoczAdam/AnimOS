@@ -15,6 +15,7 @@ static uint8_t* cursor_icon = 0;
 typedef struct {
     char name[256];
     char date[32];
+    uint32_t size;
     int is_directory;
 } file_entry_t;
 
@@ -45,6 +46,40 @@ static void itoa_custom(uint32_t n, char* s) {
     while (n > 0) { s[i++] = (n % 10) + '0'; n /= 10; }
     s[i] = 0;
     for (j = 0; j < i / 2; j++) { char c = s[j]; s[j] = s[i - 1 - j]; s[i - 1 - j] = c; }
+}
+
+static void format_size(uint32_t size, char* out) {
+    if (size == 0) { out[0] = '-'; out[1] = 0; return; }
+    
+    const char* units[] = {"B", "KB", "MB", "GB"};
+    int unit_idx = 0;
+    uint32_t val = size;
+    uint32_t frac = 0;
+    
+    while (val >= 1024 && unit_idx < 3) {
+        frac = ((val % 1024) * 10 + 512) / 1024;
+        val /= 1024;
+        if (frac >= 10) {
+            val++;
+            frac = 0;
+        }
+        unit_idx++;
+    }
+    
+    char s_val[16], s_frac[4];
+    itoa_custom(val, s_val);
+    itoa_custom(frac, s_frac);
+    
+    int pos = 0;
+    while (s_val[pos]) { out[pos] = s_val[pos]; pos++; }
+    if (unit_idx > 0) {
+        out[pos++] = '.';
+        out[pos++] = s_frac[0];
+    }
+    out[pos++] = ' ';
+    const char* unit = units[unit_idx];
+    while (*unit) { out[pos++] = *unit++; }
+    out[pos] = 0;
 }
 
 static void strcat_custom(char* dest, const char* src) {
@@ -84,20 +119,27 @@ static void refresh_file_list(kernel_api_t* api) {
     int res = api->list_dir(current_path, buffer, sizeof(buffer));
     if (res <= 0) return;
 
-    char* ptr = buffer;
-    char* end = buffer + res;
+    uint8_t* ptr = (uint8_t*)buffer;
+    uint8_t* end = (uint8_t*)buffer + res;
     while (ptr < end && file_count < 128) {
-        char type = *ptr++;
+        char type = (char)*ptr++;
         
         int k;
         for (k = 0; k < 16 && ptr < end; k++) {
-            current_files[file_count].date[k] = *ptr++;
+            current_files[file_count].date[k] = (char)*ptr++;
         }
         current_files[file_count].date[k] = 0;
 
+        uint32_t size = 0;
+        size |= ((uint32_t)*ptr++ << 24);
+        size |= ((uint32_t)*ptr++ << 16);
+        size |= ((uint32_t)*ptr++ << 8);
+        size |= (uint32_t)*ptr++;
+        current_files[file_count].size = size;
+
         int i = 0;
         while (ptr < end && *ptr != '\n' && i < 255) {
-            current_files[file_count].name[i++] = *ptr++;
+            current_files[file_count].name[i++] = (char)*ptr++;
         }
         current_files[file_count].name[i] = 0;
         if (ptr < end && *ptr == '\n') ptr++;
@@ -107,6 +149,28 @@ static void refresh_file_list(kernel_api_t* api) {
     }
     selected_file_index = -1;
     hover_file_index = -1;
+}
+
+static void draw_string_truncated(kernel_api_t* api, uint32_t x, uint32_t y, const char* str, uint32_t color, int scale, uint32_t max_w, struct multiboot_tag_framebuffer* fb) {
+    if (!str || !*str) return;
+    
+    if (api->get_string_width_scaled(str, scale) <= max_w) {
+        api->draw_string_scaled(x, y, str, color, scale, fb);
+        return;
+    }
+    
+    char temp[256];
+    int i = 0;
+    while (str[i] && i < 250) {
+        temp[i] = str[i];
+        temp[i+1] = '.'; temp[i+2] = '.'; temp[i+3] = '.'; temp[i+4] = 0;
+        if (api->get_string_width_scaled(temp, scale) > max_w) break;
+        i++;
+    }
+    if (i > 0) {
+        temp[i] = '.'; temp[i+1] = '.'; temp[i+2] = '.'; temp[i+3] = 0;
+        api->draw_string_scaled(x, y, temp, color, scale, fb);
+    }
 }
 
 static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb) {
@@ -170,10 +234,18 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     uint32_t cy = content_y + 40;
 
     if (is_drive_opened) {
+        // Dynamic column positions
+        uint32_t col_name_x = sidebar_w + 60;
+        uint32_t col_date_x = w - 410;
+        uint32_t col_type_x = w - 250;
+        uint32_t col_size_x = w - 100;
+
         // Column Headers
         uint32_t header_y = content_y + 12;
-        api->draw_string_scaled(sidebar_w + 60, header_y, "Name", 0x888888, 65, fb);
-        api->draw_string_scaled(w - 180, header_y, "Modification date", 0x888888, 65, fb);
+        api->draw_string_scaled(col_name_x, header_y, "Name", 0x888888, 65, fb);
+        api->draw_string_scaled(col_date_x, header_y, (w < 900 ? "Mod. Date" : "Modification date"), 0x888888, 65, fb);
+        api->draw_string_scaled(col_type_x, header_y, "Type", 0x888888, 65, fb);
+        api->draw_string_scaled(col_size_x, header_y, "Size", 0x888888, 65, fb);
         api->draw_rect(sidebar_w + 20, header_y + 18, w - sidebar_w - 40, 1, 0xEEEEEE, fb);
 
         uint32_t visible_h = h - cy;
@@ -201,25 +273,39 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
                 }
 
                 uint8_t* icon = folder_icon;
+                const char* type_str = "File folder";
                 if (!current_files[i].is_directory) {
                     icon = file_icon;
+                    type_str = "File";
                     const char* name = current_files[i].name;
                     if (ends_with_ignore_case(name, ".bin")) {
-                        icon = exe_icon;
+                        icon = exe_icon; type_str = "Application";
                     } else if (ends_with_ignore_case(name, ".bmp")) {
-                        icon = bmp_icon;
+                        icon = bmp_icon; type_str = "Bitmap Image";
                     } else if (ends_with_ignore_case(name, ".xml")) {
-                        icon = xml_icon;
-                    } else if (ends_with_ignore_case(name, ".cur") || ends_with_ignore_case(name, ".ani")) {
-                        icon = cursor_icon;
+                        icon = xml_icon; type_str = "XML Document";
+                    } else if (ends_with_ignore_case(name, ".cur")) {
+                        icon = cursor_icon; type_str = "Static Cursor";
+                    } else if (ends_with_ignore_case(name, ".ani")) {
+                        icon = cursor_icon; type_str = "Animated Cursor";
                     }
                 }
                 
                 if (icon) api->draw_icon_scaled(sidebar_w + 30, item_y, 20, 20, icon, fb);
-                api->draw_string_scaled(sidebar_w + 60, item_y + 2, current_files[i].name, 0x333333, 70, fb);
                 
-                uint32_t date_x = w - 180;
-                api->draw_string_scaled(date_x, item_y + 2, current_files[i].date, 0x888888, 65, fb);
+                // Truncated Name
+                draw_string_truncated(api, col_name_x, item_y + 2, current_files[i].name, 0x333333, 70, col_date_x - col_name_x - 10, fb);
+                
+                // Date
+                api->draw_string_scaled(col_date_x, item_y + 2, current_files[i].date, 0x888888, 65, fb);
+                
+                // Truncated Type
+                draw_string_truncated(api, col_type_x, item_y + 2, type_str, 0x888888, 65, col_size_x - col_type_x - 10, fb);
+                
+                // Size
+                char size_str[32];
+                format_size(current_files[i].size, size_str);
+                api->draw_string_scaled(col_size_x, item_y + 2, size_str, 0x888888, 65, fb);
             }
 
             if (max_scroll > 0) {
