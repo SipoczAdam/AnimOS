@@ -263,7 +263,7 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
                 if (item_y_final > (int)visible_h - 20) continue;
 
                 uint32_t item_y = cy + item_y_final;
-                uint32_t item_w = w - sidebar_w - 80;
+                uint32_t item_w = w - sidebar_w - 40;
                 uint32_t item_h = 28;
 
                 if (selected_file_index == i) {
