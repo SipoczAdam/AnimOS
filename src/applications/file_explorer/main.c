@@ -14,6 +14,7 @@ static uint8_t* cursor_icon = 0;
 
 typedef struct {
     char name[256];
+    char date[32];
     int is_directory;
 } file_entry_t;
 
@@ -62,21 +63,44 @@ static int strcmp_custom(const char* s1, const char* s2) {
     return *(unsigned char*)s1 - *(unsigned char*)s2;
 }
 
+static int ends_with_ignore_case(const char* str, const char* suffix) {
+    int str_len = 0; while (str[str_len]) str_len++;
+    int suf_len = 0; while (suffix[suf_len]) suf_len++;
+    if (suf_len > str_len) return 0;
+    
+    for (int i = 0; i < suf_len; i++) {
+        char c1 = str[str_len - suf_len + i];
+        char c2 = suffix[i];
+        if (c1 >= 'A' && c1 <= 'Z') c1 += 32;
+        if (c2 >= 'A' && c2 <= 'Z') c2 += 32;
+        if (c1 != c2) return 0;
+    }
+    return 1;
+}
+
 static void refresh_file_list(kernel_api_t* api) {
     file_count = 0;
-    static char buffer[4096];
+    static char buffer[8192];
     int res = api->list_dir(current_path, buffer, sizeof(buffer));
     if (res <= 0) return;
 
     char* ptr = buffer;
-    while (ptr < buffer + res && file_count < 128) {
+    char* end = buffer + res;
+    while (ptr < end && file_count < 128) {
         char type = *ptr++;
+        
+        int k;
+        for (k = 0; k < 16 && ptr < end; k++) {
+            current_files[file_count].date[k] = *ptr++;
+        }
+        current_files[file_count].date[k] = 0;
+
         int i = 0;
-        while (ptr < buffer + res && *ptr != '\n' && i < 255) {
+        while (ptr < end && *ptr != '\n' && i < 255) {
             current_files[file_count].name[i++] = *ptr++;
         }
         current_files[file_count].name[i] = 0;
-        if (ptr < buffer + res && *ptr == '\n') ptr++;
+        if (ptr < end && *ptr == '\n') ptr++;
         
         current_files[file_count].is_directory = (type == 'D');
         file_count++;
@@ -146,9 +170,15 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     uint32_t cy = content_y + 40;
 
     if (is_drive_opened) {
-        uint32_t visible_h = h - content_y;
+        // Column Headers
+        uint32_t header_y = content_y + 12;
+        api->draw_string_scaled(sidebar_w + 60, header_y, "Name", 0x888888, 65, fb);
+        api->draw_string_scaled(w - 180, header_y, "Modification date", 0x888888, 65, fb);
+        api->draw_rect(sidebar_w + 20, header_y + 18, w - sidebar_w - 40, 1, 0xEEEEEE, fb);
+
+        uint32_t visible_h = h - cy;
         int total_items_h = file_count * 30;
-        int max_scroll = (total_items_h > (int)visible_h - 60) ? (total_items_h - ((int)visible_h - 60)) : 0;
+        int max_scroll = (total_items_h > (int)visible_h - 20) ? (total_items_h - ((int)visible_h - 20)) : 0;
         if (scroll_offset > max_scroll) scroll_offset = max_scroll;
         if (scroll_offset < 0) scroll_offset = 0;
 
@@ -158,7 +188,7 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
             for (int i = 0; i < file_count; i++) {
                 int item_y_final = (i * 30) - scroll_offset;
                 if (item_y_final + 30 < 0) continue;
-                if (item_y_final > (int)visible_h - 60) continue;
+                if (item_y_final > (int)visible_h - 20) continue;
 
                 uint32_t item_y = cy + item_y_final;
                 uint32_t item_w = w - sidebar_w - 80;
@@ -173,33 +203,30 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
                 uint8_t* icon = folder_icon;
                 if (!current_files[i].is_directory) {
                     icon = file_icon;
-                    int name_len = 0; while (current_files[i].name[name_len]) name_len++;
-                    if (name_len > 4) {
-                        const char* ext = &current_files[i].name[name_len - 4];
-                        if (ext[0] == '.' && (ext[1] == 'b' || ext[1] == 'B') && (ext[2] == 'i' || ext[2] == 'I') && (ext[3] == 'n' || ext[3] == 'N')) {
-                            icon = exe_icon;
-                        } else if (ext[0] == '.' && (ext[1] == 'b' || ext[1] == 'B') && (ext[2] == 'm' || ext[2] == 'M') && (ext[3] == 'p' || ext[3] == 'P')) {
-                            icon = bmp_icon;
-                        } else if (ext[0] == '.' && (ext[1] == 'x' || ext[1] == 'X') && (ext[2] == 'm' || ext[2] == 'M') && (ext[3] == 'l' || ext[3] == 'L')) {
-                            icon = xml_icon;
-                        } else if (ext[0] == '.' && (
-                            ((ext[1] == 'c' || ext[1] == 'C') && (ext[2] == 'u' || ext[2] == 'U') && (ext[3] == 'r' || ext[3] == 'R')) ||
-                            ((ext[1] == 'a' || ext[1] == 'A') && (ext[2] == 'n' || ext[2] == 'N') && (ext[3] == 'i' || ext[3] == 'I'))
-                        )) {
-                            icon = cursor_icon;
-                        }
+                    const char* name = current_files[i].name;
+                    if (ends_with_ignore_case(name, ".bin")) {
+                        icon = exe_icon;
+                    } else if (ends_with_ignore_case(name, ".bmp")) {
+                        icon = bmp_icon;
+                    } else if (ends_with_ignore_case(name, ".xml")) {
+                        icon = xml_icon;
+                    } else if (ends_with_ignore_case(name, ".cur") || ends_with_ignore_case(name, ".ani")) {
+                        icon = cursor_icon;
                     }
                 }
                 
                 if (icon) api->draw_icon_scaled(sidebar_w + 30, item_y, 20, 20, icon, fb);
                 api->draw_string_scaled(sidebar_w + 60, item_y + 2, current_files[i].name, 0x333333, 70, fb);
+                
+                uint32_t date_x = w - 180;
+                api->draw_string_scaled(date_x, item_y + 2, current_files[i].date, 0x888888, 65, fb);
             }
 
             if (max_scroll > 0) {
                 uint32_t sb_w = 8;
                 uint32_t sb_x = w - sb_w - 4;
-                uint32_t sb_y = content_y + 10;
-                uint32_t sb_h = h - content_y - 20;
+                uint32_t sb_y = content_y + 40;
+                uint32_t sb_h = h - content_y - 50;
                 api->draw_rect(sb_x, sb_y, sb_w, sb_h, 0xF4F4F4, fb);
                 uint32_t thumb_h = (sb_h * sb_h) / (sb_h + max_scroll);
                 if (thumb_h < 30) thumb_h = 30;
@@ -389,10 +416,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                         } else {
                             const char* name = current_files[i].name;
                             int name_len = 0; while (name[name_len]) name_len++;
-                            if (name_len > 4 && name[name_len-4] == '.' && 
-                               (name[name_len-3] == 'b' || name[name_len-3] == 'B') && 
-                               (name[name_len-2] == 'i' || name[name_len-2] == 'I') && 
-                               (name[name_len-1] == 'n' || name[name_len-1] == 'N')) {
+                            if (ends_with_ignore_case(name, ".bin")) {
                                 if (strcmp_custom(name, "file_explorer.bin") != 0 && strcmp_custom(name, "FILE_EXPLORER.BIN") != 0) {
                                     char full_path[512];
                                     strcpy_custom(full_path, current_path);

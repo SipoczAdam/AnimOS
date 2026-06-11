@@ -264,6 +264,39 @@ uint32_t fat32_get_used_space_mb() {
     return (uint32_t)(used_bytes / (1024 * 1024));
 }
 
+extern int kernel_get_timezone_offset();
+
+static void format_fat_date(uint16_t date, uint16_t time, char* out) {
+    int day = date & 0x1F;
+    int month = (date >> 5) & 0x0F;
+    int year = 1980 + (date >> 9);
+    int min = (time >> 5) & 0x3F;
+    int hour = (time >> 11);
+
+    int offset = kernel_get_timezone_offset();
+    hour += offset;
+    if (hour >= 24) hour -= 24;
+    if (hour < 0) hour += 24;
+
+    out[0] = (year / 1000) + '0';
+    out[1] = ((year / 100) % 10) + '0';
+    out[2] = ((year / 10) % 10) + '0';
+    out[3] = (year % 10) + '0';
+    out[4] = '-';
+    out[5] = (month / 10) + '0';
+    out[6] = (month % 10) + '0';
+    out[7] = '-';
+    out[8] = (day / 10) + '0';
+    out[9] = (day % 10) + '0';
+    out[10] = ' ';
+    out[11] = (hour / 10) + '0';
+    out[12] = (hour % 10) + '0';
+    out[13] = ':';
+    out[14] = (min / 10) + '0';
+    out[15] = (min % 10) + '0';
+    out[16] = 0;
+}
+
 int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
     struct fat32_directory_entry entry;
     uint32_t dir_cluster;
@@ -335,8 +368,11 @@ int fat32_list_dir(const char* path, char* buffer, uint32_t max_size) {
                 if (!(name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0)))) {
                     int name_len = 0;
                     while (name[name_len]) name_len++;
-                    if (buffer_offset + name_len + 2 < max_size) {
+                    char date_str[17];
+                    format_fat_date(d_entry->last_mod_date, d_entry->last_mod_time, date_str);
+                    if (buffer_offset + name_len + 16 + 2 < max_size) {
                         buffer[buffer_offset++] = (d_entry->attributes & 0x10) ? 'D' : 'F';
+                        for (int k = 0; k < 16; k++) buffer[buffer_offset++] = date_str[k];
                         for (int k = 0; k < name_len; k++) buffer[buffer_offset++] = name[k];
                         buffer[buffer_offset++] = '\n';
                     } else {

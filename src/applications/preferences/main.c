@@ -7,7 +7,7 @@ static uint32_t btn_size = 22;
 
 // Internal State
 static int selected_menu = 0;
-static char wallpaper_list[1024];
+static char wallpaper_list[2048];
 static int wallpaper_count = 0;
 static int selected_tz = 0;
 static int tz_dropdown_open = 0;
@@ -150,7 +150,8 @@ void render_to_buffer(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, s
         while (*p && i < 100) {
             char name[256];
             int k = 0;
-            if (*p == 'D' || *p == 'F') p++; // Skip the type prefix
+            if (*p == 'D' || *p == 'F') p++; // Skip prefix
+            p += 16; // Skip date (16 chars)
             while (*p && *p != '\n' && k < 255) name[k++] = *p++;
             name[k] = 0;
             if (*p == '\n') p++;
@@ -592,6 +593,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
                     char name[256];
                     int k = 0;
                     if (*p == 'D' || *p == 'F') p++; // Skip prefix
+                    p += 16; // Skip date (16 chars)
                     while (*p && *p != '\n' && k < 255) name[k++] = *p++;
                     name[k] = 0;
                     if (*p == '\n') p++;
