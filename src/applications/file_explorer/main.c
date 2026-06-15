@@ -243,7 +243,10 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     if (home_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, home_icon, fb);
     api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Home", 0x333333, 75, fb);
 
-    sidebar_item_y += sidebar_item_h + 5;
+    sidebar_item_y += sidebar_item_h + 8;
+    api->draw_rect(20, sidebar_item_y, sidebar_w - 40, 1, 0xDDDDDD, fb);
+    sidebar_item_y += 9;
+
     if (hover_downloads) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
     if (download_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, download_icon, fb);
     api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Downloads", 0x333333, 75, fb);
@@ -517,7 +520,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             return;
         }
 
-        sidebar_item_y += 36 + 5;
+        sidebar_item_y += 36 + 8 + 9;
         if (is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36)) {
             is_drive_opened = 1;
             strcpy_custom(current_path, "Sysroot:/Users/Admin/Downloads/");
@@ -666,11 +669,21 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             uint32_t content_y = title_bar_h + nav_bar_h + 1;
             uint32_t sidebar_item_y = content_y + 10;
             hover_home = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
-            hover_downloads = is_inside(mx, my, 10, sidebar_item_y + 36 + 5, sidebar_w - 20, 36);
-            hover_documents = is_inside(mx, my, 10, sidebar_item_y + (36 + 5) * 2, sidebar_w - 20, 36);
-            hover_pictures = is_inside(mx, my, 10, sidebar_item_y + (36 + 5) * 3, sidebar_w - 20, 36);
-            hover_musics = is_inside(mx, my, 10, sidebar_item_y + (36 + 5) * 4, sidebar_w - 20, 36);
-            hover_videos = is_inside(mx, my, 10, sidebar_item_y + (36 + 5) * 5, sidebar_w - 20, 36);
+            
+            sidebar_item_y += 36 + 8 + 9;
+            hover_downloads = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
+
+            sidebar_item_y += 36 + 5;
+            hover_documents = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
+
+            sidebar_item_y += 36 + 5;
+            hover_pictures = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
+
+            sidebar_item_y += 36 + 5;
+            hover_musics = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
+
+            sidebar_item_y += 36 + 5;
+            hover_videos = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
 
             if (is_drive_opened) {
                 uint32_t content_y = title_bar_h + nav_bar_h + 1;
