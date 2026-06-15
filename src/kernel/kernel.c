@@ -71,6 +71,7 @@ uint8_t* cursor_icon_data = 0;
 uint8_t* disk_icon_data = 0;
 uint8_t* back_icon_data = 0;
 uint8_t* reload_icon_data = 0;
+uint8_t* home_icon_data = 0;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -1198,6 +1199,7 @@ void init_kernel_api() {
     kernel_api.disk_icon = disk_icon_data;
     kernel_api.back_icon = back_icon_data;
     kernel_api.reload_icon = reload_icon_data;
+    kernel_api.home_icon = home_icon_data;
 
     kernel_api.window_buffer = preferences_window_buffer; kernel_api.draw_rect = draw_rect; 
     kernel_api.draw_rounded_rect = draw_rounded_rect;
@@ -1796,6 +1798,7 @@ void kernel_main(uint64_t multiboot_addr) {
         disk_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
         back_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/back.bmp");
         reload_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/reload.bmp");
+        home_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/home.bmp");
 
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 75, fb);
         init_kernel_api();

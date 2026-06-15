@@ -31,6 +31,7 @@ typedef struct {
     uint8_t* disk_icon;
     uint8_t* back_icon;
     uint8_t* reload_icon;
+    uint8_t* home_icon;
 
     void (*draw_rect)(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color, struct multiboot_tag_framebuffer* fb);
     void (*draw_rounded_rect)(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t radius, uint32_t color, struct multiboot_tag_framebuffer* fb);
