@@ -13,6 +13,10 @@ static uint8_t* xml_icon = 0;
 static uint8_t* cursor_icon = 0;
 static uint8_t* home_icon = 0;
 static uint8_t* download_icon = 0;
+static uint8_t* document_icon = 0;
+static uint8_t* pictures_icon = 0;
+static uint8_t* musics_icon = 0;
+static uint8_t* videos_icon = 0;
 
 typedef struct {
     char name[256];
@@ -34,6 +38,10 @@ static int is_drive_opened = 0;
 
 static int hover_home = 0;
 static int hover_downloads = 0;
+static int hover_documents = 0;
+static int hover_pictures = 0;
+static int hover_musics = 0;
+static int hover_videos = 0;
 static int hover_back = 0;
 static int hover_reload = 0;
 
@@ -239,6 +247,26 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     if (hover_downloads) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
     if (download_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, download_icon, fb);
     api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Downloads", 0x333333, 75, fb);
+
+    sidebar_item_y += sidebar_item_h + 5;
+    if (hover_documents) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
+    if (document_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, document_icon, fb);
+    api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Documents", 0x333333, 75, fb);
+
+    sidebar_item_y += sidebar_item_h + 5;
+    if (hover_pictures) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
+    if (pictures_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, pictures_icon, fb);
+    api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Pictures", 0x333333, 75, fb);
+
+    sidebar_item_y += sidebar_item_h + 5;
+    if (hover_musics) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
+    if (musics_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, musics_icon, fb);
+    api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Music", 0x333333, 75, fb);
+
+    sidebar_item_y += sidebar_item_h + 5;
+    if (hover_videos) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
+    if (videos_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, videos_icon, fb);
+    api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Videos", 0x333333, 75, fb);
 
     api->draw_rect(sidebar_w, content_y, w - sidebar_w, h - content_y, 0xFFFFFF, fb); // Main area
 
@@ -498,6 +526,42 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             return;
         }
 
+        sidebar_item_y += 36 + 5;
+        if (is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36)) {
+            is_drive_opened = 1;
+            strcpy_custom(current_path, "Sysroot:/Users/Admin/Documents/");
+            refresh_file_list(api);
+            scroll_offset = 0;
+            return;
+        }
+
+        sidebar_item_y += 36 + 5;
+        if (is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36)) {
+            is_drive_opened = 1;
+            strcpy_custom(current_path, "Sysroot:/Users/Admin/Pictures/");
+            refresh_file_list(api);
+            scroll_offset = 0;
+            return;
+        }
+
+        sidebar_item_y += 36 + 5;
+        if (is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36)) {
+            is_drive_opened = 1;
+            strcpy_custom(current_path, "Sysroot:/Users/Admin/Music/");
+            refresh_file_list(api);
+            scroll_offset = 0;
+            return;
+        }
+
+        sidebar_item_y += 36 + 5;
+        if (is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36)) {
+            is_drive_opened = 1;
+            strcpy_custom(current_path, "Sysroot:/Users/Admin/Videos/");
+            refresh_file_list(api);
+            scroll_offset = 0;
+            return;
+        }
+
         if (is_inside(mx, my, 10, btn_y - 2, 26, 26)) {
             if (is_drive_opened) {
                 int len = 0; while (current_path[len]) len++;
@@ -583,7 +647,10 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             cursor_icon = api->cursor_icon;
             home_icon = api->home_icon;
             download_icon = api->download_icon;
-
+            document_icon = api->documents_icon;
+            pictures_icon = api->pictures_icon;
+            musics_icon = api->musics_icon;
+            videos_icon = api->videos_icon;
             refresh_file_list(api);
         }
         if (event == APP_EVENT_TICK) {
@@ -600,6 +667,10 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             uint32_t sidebar_item_y = content_y + 10;
             hover_home = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
             hover_downloads = is_inside(mx, my, 10, sidebar_item_y + 36 + 5, sidebar_w - 20, 36);
+            hover_documents = is_inside(mx, my, 10, sidebar_item_y + (36 + 5) * 2, sidebar_w - 20, 36);
+            hover_pictures = is_inside(mx, my, 10, sidebar_item_y + (36 + 5) * 3, sidebar_w - 20, 36);
+            hover_musics = is_inside(mx, my, 10, sidebar_item_y + (36 + 5) * 4, sidebar_w - 20, 36);
+            hover_videos = is_inside(mx, my, 10, sidebar_item_y + (36 + 5) * 5, sidebar_w - 20, 36);
 
             if (is_drive_opened) {
                 uint32_t content_y = title_bar_h + nav_bar_h + 1;

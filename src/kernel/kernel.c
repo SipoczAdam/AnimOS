@@ -73,6 +73,10 @@ uint8_t* back_icon_data = 0;
 uint8_t* reload_icon_data = 0;
 uint8_t* home_icon_data = 0;
 uint8_t* download_icon_data = 0;
+uint8_t* documents_icon_data = 0;
+uint8_t* pictures_icon_data = 0;
+uint8_t* musics_icon_data = 0;
+uint8_t* videos_icon_data = 0;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -1202,6 +1206,10 @@ void init_kernel_api() {
     kernel_api.reload_icon = reload_icon_data;
     kernel_api.home_icon = home_icon_data;
     kernel_api.download_icon = download_icon_data;
+    kernel_api.documents_icon = documents_icon_data;
+    kernel_api.pictures_icon = pictures_icon_data;
+    kernel_api.musics_icon = musics_icon_data;
+    kernel_api.videos_icon = videos_icon_data;
 
     kernel_api.window_buffer = preferences_window_buffer; kernel_api.draw_rect = draw_rect; 
     kernel_api.draw_rounded_rect = draw_rounded_rect;
@@ -1802,6 +1810,10 @@ void kernel_main(uint64_t multiboot_addr) {
         reload_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/reload.bmp");
         home_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/home.bmp");
         download_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/download.bmp");
+        documents_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/documents.bmp");
+        pictures_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/pictures.bmp");
+        musics_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/musics.bmp");
+        videos_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/videos.bmp");
 
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 75, fb);
         init_kernel_api();
