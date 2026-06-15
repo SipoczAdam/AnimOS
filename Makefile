@@ -56,7 +56,9 @@ hdd.img:
 	dd if=/dev/zero of=hdd.img bs=1M count=128
 	mkfs.fat -F 32 -n "SYSROOT" hdd.img
 	mmd -i hdd.img ::/AnimOS
+	mmd -i hdd.img ::/Users
 	mcopy -i hdd.img -s sysroot/AnimOS/* ::/AnimOS/
+	mcopy -i hdd.img -s sysroot/Users/* ::/Users/
 
 # Clean
 clean:

@@ -12,6 +12,7 @@ static uint8_t* bmp_icon = 0;
 static uint8_t* xml_icon = 0;
 static uint8_t* cursor_icon = 0;
 static uint8_t* home_icon = 0;
+static uint8_t* download_icon = 0;
 
 typedef struct {
     char name[256];
@@ -32,6 +33,7 @@ static int is_selected = 0;
 static int is_drive_opened = 0;
 
 static int hover_home = 0;
+static int hover_downloads = 0;
 static int hover_back = 0;
 static int hover_reload = 0;
 
@@ -232,6 +234,11 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     if (hover_home) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
     if (home_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, home_icon, fb);
     api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Home", 0x333333, 75, fb);
+
+    sidebar_item_y += sidebar_item_h + 5;
+    if (hover_downloads) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
+    if (download_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, download_icon, fb);
+    api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Downloads", 0x333333, 75, fb);
 
     api->draw_rect(sidebar_w, content_y, w - sidebar_w, h - content_y, 0xFFFFFF, fb); // Main area
 
@@ -482,6 +489,15 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             return;
         }
 
+        sidebar_item_y += 36 + 5;
+        if (is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36)) {
+            is_drive_opened = 1;
+            strcpy_custom(current_path, "Sysroot:/Users/Admin/Downloads/");
+            refresh_file_list(api);
+            scroll_offset = 0;
+            return;
+        }
+
         if (is_inside(mx, my, 10, btn_y - 2, 26, 26)) {
             if (is_drive_opened) {
                 int len = 0; while (current_path[len]) len++;
@@ -566,6 +582,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             xml_icon = api->xml_icon;
             cursor_icon = api->cursor_icon;
             home_icon = api->home_icon;
+            download_icon = api->download_icon;
 
             refresh_file_list(api);
         }
@@ -582,6 +599,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             uint32_t content_y = title_bar_h + nav_bar_h + 1;
             uint32_t sidebar_item_y = content_y + 10;
             hover_home = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
+            hover_downloads = is_inside(mx, my, 10, sidebar_item_y + 36 + 5, sidebar_w - 20, 36);
 
             if (is_drive_opened) {
                 uint32_t content_y = title_bar_h + nav_bar_h + 1;
