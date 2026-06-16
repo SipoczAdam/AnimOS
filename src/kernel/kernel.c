@@ -78,6 +78,7 @@ uint8_t* documents_icon_data = 0;
 uint8_t* pictures_icon_data = 0;
 uint8_t* musics_icon_data = 0;
 uint8_t* videos_icon_data = 0;
+uint8_t* app_config_data = 0;
 
 uint32_t screen_w = 1024;
 uint32_t screen_h = 768;
@@ -108,6 +109,17 @@ volatile int32_t mouse_wheel = 0;
 volatile int power_menu_open = 0;
 volatile int power_menu_progress = 0;
 
+typedef struct {
+    char name[128];
+    char path[256];
+    uint8_t* icon_data;
+    int is_app;
+    int app_id;
+} desktop_icon_t;
+
+static desktop_icon_t desktop_icons[16];
+static int desktop_icon_count = 0;
+
 static int32_t frame_mx, frame_my, frame_wheel;
 static uint8_t frame_clicked;
 static uint32_t last_kernel_click_count = 0;
@@ -119,7 +131,7 @@ uint32_t preferences_window_buffer[1024 * 768];
 
 static uint8_t* app_bin_cache[MAX_APPS] = {0};
 static uint32_t app_bin_size[MAX_APPS] = {0};
-static char* app_bin_paths[MAX_APPS] = {"Sysroot:/AnimOS/apps/file_explorer.bin", "Sysroot:/AnimOS/apps/preferences.bin", 0, 0, 0, 0, 0, 0};
+static char* app_bin_paths[MAX_APPS] = {"Sysroot:/Users/Admin/Desktop/file_explorer.bin", "Sysroot:/Users/Admin/Desktop/preferences.bin", 0, 0, 0, 0, 0, 0};
 static int currently_loaded_app = -1;
 static uint8_t* app_state_buffers[MAX_APPS] = {0};
 static int app_state_saved[MAX_APPS] = {0};
@@ -135,6 +147,33 @@ void draw_string(uint32_t x, uint32_t y, const char* str, uint32_t color, struct
 void draw_pixel(uint32_t x, uint32_t y, uint32_t color, struct multiboot_tag_framebuffer* fb);
 void strcpy_custom(char* dst, const char* src);
 void strcat_custom(char* dst, const char* src);
+int memcmp_custom(const void* s1, const void* s2, uint32_t n);
+
+void get_display_name(const char* filename, char* out_name) {
+    if (!app_config_data) {
+        strcpy_custom(out_name, filename);
+        return;
+    }
+    const char* ptr = (const char*)app_config_data;
+    while (*ptr) {
+        const char* line_start = ptr;
+        while (*ptr && *ptr != '\n' && *ptr != '\r') ptr++;
+        int line_len = ptr - line_start;
+        int fn_len = 0; while (filename[fn_len]) fn_len++;
+        if (line_len > fn_len && memcmp_custom(line_start, filename, fn_len) == 0 && line_start[fn_len] == '=') {
+            const char* val_start = line_start + fn_len + 1;
+            int val_len = (line_start + line_len) - val_start;
+            if (val_len > 127) val_len = 127;
+            for (int i = 0; i < val_len; i++) out_name[i] = val_start[i];
+            out_name[val_len] = 0;
+            return;
+        }
+        if (*ptr == '\r') ptr++;
+        if (*ptr == '\n') ptr++;
+    }
+    strcpy_custom(out_name, filename);
+}
+
 uint32_t blend_colors(uint32_t bg, uint32_t fg, uint8_t alpha);
 void draw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color, struct multiboot_tag_framebuffer* fb);
 uint32_t get_wallpaper_pixel_fast(uint32_t x, uint32_t y, struct multiboot_tag_framebuffer* fb);
@@ -920,16 +959,93 @@ void draw_status_bar(struct multiboot_tag_framebuffer* fb) {
     draw_icon_scaled(bar_x + bar_w - icon_size - 5, bar_y + (bar_h - icon_size) / 2, icon_size, icon_size, icon, fb);
 }
 
+uint8_t* get_icon_for_file(const char* name, int is_dir) {
+    if (is_dir) return folder_icon_data;
+    int len = 0; while (name[len]) len++;
+    if (len > 4 && (memcmp_custom(name + len - 4, ".bin", 4) == 0 || memcmp_custom(name + len - 4, ".BIN", 4) == 0)) {
+        if (strstr_custom(name, "file_explorer") || strstr_custom(name, "FILE_EXPLORER")) return file_explorer_icon_data;
+        if (strstr_custom(name, "preferences") || strstr_custom(name, "PREFERENCES")) return preferences_icon_data;
+        return exe_icon_data;
+    }
+    if (len > 4 && (memcmp_custom(name + len - 4, ".bmp", 4) == 0 || memcmp_custom(name + len - 4, ".BMP", 4) == 0)) return bmp_icon_data;
+    if (len > 4 && (memcmp_custom(name + len - 4, ".xml", 4) == 0 || memcmp_custom(name + len - 4, ".XML", 4) == 0)) return xml_icon_data;
+    if (len > 4 && (memcmp_custom(name + len - 4, ".cur", 4) == 0 || memcmp_custom(name + len - 4, ".ani", 4) == 0 || memcmp_custom(name + len - 4, ".CUR", 4) == 0 || memcmp_custom(name + len - 4, ".ANI", 4) == 0)) return cursor_icon_data;
+    return file_icon_data;
+}
+
+void refresh_desktop_icons() {
+    desktop_icon_count = 0;
+    static char buffer[4096];
+    int res = vfs_list_dir("Sysroot:/Users/Admin/Desktop/", buffer, sizeof(buffer));
+    if (res <= 0) return;
+
+    uint8_t* ptr = (uint8_t*)buffer;
+    uint8_t* end = (uint8_t*)buffer + res;
+    while (ptr < end && desktop_icon_count < 16) {
+        char type = (char)*ptr++;
+        ptr += 16; // Skip date
+
+        uint32_t size = 0;
+        size |= ((uint32_t)*ptr++ << 24); size |= ((uint32_t)*ptr++ << 16); size |= ((uint32_t)*ptr++ << 8); size |= (uint32_t)*ptr++;
+
+        int i = 0;
+        char actual_name[128];
+        while (ptr < end && *ptr != '\n' && i < 127) {
+            actual_name[i++] = (char)*ptr++;
+        }
+        actual_name[i] = 0;
+        if (ptr < end && *ptr == '\n') ptr++;
+
+        if (actual_name[0] == '.') continue; // Skip hidden files
+
+        get_display_name(actual_name, desktop_icons[desktop_icon_count].name);
+        strcpy_custom(desktop_icons[desktop_icon_count].path, "Sysroot:/Users/Admin/Desktop/");
+        strcat_custom(desktop_icons[desktop_icon_count].path, actual_name);
+        
+        desktop_icons[desktop_icon_count].icon_data = get_icon_for_file(actual_name, (type == 'D'));
+        
+        int name_len = 0; while (actual_name[name_len]) name_len++;
+        desktop_icons[desktop_icon_count].is_app = (type == 'F' && name_len > 4 && (memcmp_custom(actual_name + name_len - 4, ".bin", 4) == 0 || memcmp_custom(actual_name + name_len - 4, ".BIN", 4) == 0));
+        
+        if (desktop_icons[desktop_icon_count].is_app) {
+            // Assign app_id and update app_bin_paths
+            int app_id = -1;
+            for (int j = 0; j < MAX_APPS; j++) {
+                if (app_bin_paths[j] && strstr_custom(app_bin_paths[j], actual_name)) {
+                    app_id = j; break;
+                }
+            }
+            if (app_id == -1) {
+                for (int j = 0; j < MAX_APPS; j++) {
+                    if (!app_bin_paths[j]) {
+                        char* new_path = (char*)malloc_custom(256);
+                        strcpy_custom(new_path, desktop_icons[desktop_icon_count].path);
+                        app_bin_paths[j] = new_path;
+                        app_id = j; break;
+                    }
+                }
+            }
+            desktop_icons[desktop_icon_count].app_id = app_id;
+        } else {
+            desktop_icons[desktop_icon_count].app_id = -1;
+        }
+
+        desktop_icon_count++;
+    }
+}
+
 void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
     int any_window_open = 0;
     for (int i = 0; i < MAX_APPS; i++) if (app_open_flags[i]) { any_window_open = 1; break; }
     if (any_window_open && kernel_api.window_maximized && !kernel_api.window_minimized) return;
-    uint32_t icon_xs[] = {30, 30}, icon_ys[] = {30, 130}; const char* labels[] = {"File explorer", "Preferences"}; uint8_t* icon_datas[] = {file_explorer_icon_data, preferences_icon_data};
-    for (int i = 0; i < 2; i++) {
-        if (!icon_datas[i]) continue;
-        uint32_t icon_x = icon_xs[i], icon_y = icon_ys[i], icon_w = 48, icon_h = 48, label_w = get_string_width_scaled(labels[i], 65);
+    
+    for (int i = 0; i < desktop_icon_count; i++) {
+        if (!desktop_icons[i].icon_data) continue;
+        uint32_t icon_x = 30 + (i / 5) * 120, icon_y = 30 + (i % 5) * 100, icon_w = 48, icon_h = 48;
+        uint32_t label_w = get_string_width_scaled(desktop_icons[i].name, 65);
         uint32_t total_w = (label_w > icon_w) ? label_w + 20 : icon_w + 20, total_h = icon_h + 5 + 18 + 10, rect_x = icon_x + icon_w/2 - total_w/2, rect_y = icon_y - 5;
         if (total_w > 150) total_w = 150; if (total_h > 150) total_h = 150;
+        
         struct multiboot_tag_framebuffer temp_fb = *fb; temp_fb.framebuffer_addr = (uint64_t)icon_area_buffer; temp_fb.framebuffer_width = total_w; temp_fb.framebuffer_height = total_h; temp_fb.framebuffer_pitch = total_w * (fb->framebuffer_bpp / 8);
         for (uint32_t y = 0; y < total_h; y++) {
             for (uint32_t x = 0; x < total_w; x++) {
@@ -948,8 +1064,8 @@ void draw_desktop_icons(struct multiboot_tag_framebuffer* fb) {
                 else { uint8_t* p = (uint8_t*)temp_fb.framebuffer_addr + offset; p[0] = bg & 0xFF; p[1] = (bg >> 8) & 0xFF; p[2] = (bg >> 16) & 0xFF; }
             }
         }
-        draw_icon_scaled(icon_x - rect_x, icon_y - rect_y, icon_w, icon_h, icon_datas[i], &temp_fb);
-        draw_string_scaled((uint32_t)((int32_t)(icon_x - rect_x) + (int32_t)(icon_w / 2) - (int32_t)(label_w / 2)), icon_y - rect_y + icon_h + 5, labels[i], 0xFFFFFF, 65, &temp_fb);
+        draw_icon_scaled(icon_x - rect_x, icon_y - rect_y, icon_w, icon_h, desktop_icons[i].icon_data, &temp_fb);
+        draw_string_scaled((uint32_t)((int32_t)(icon_x - rect_x) + (int32_t)(icon_w / 2) - (int32_t)(label_w / 2)), icon_y - rect_y + icon_h + 5, desktop_icons[i].name, 0xFFFFFF, 65, &temp_fb);
         for (uint32_t y = 0; y < total_h; y++) {
             for (uint32_t x = 0; x < total_w; x++) {
                 uint32_t offset = y * temp_fb.framebuffer_pitch + x * (fb->framebuffer_bpp / 8), color;
@@ -1817,9 +1933,11 @@ void kernel_main(uint64_t multiboot_addr) {
         pictures_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/pictures.bmp");
         musics_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/musics.bmp");
         videos_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/videos.bmp");
+        app_config_data = load_asset("Sysroot:/Programs/appconfig.cfg");
 
         draw_boot_progress_bar(bar_x, bar_y, bar_w, bar_h, 75, fb);
         init_kernel_api();
+        refresh_desktop_icons();
         struct pci_device net_dev;
         if (pci_find_device(0xFFFF, 0xFFFF, &net_dev)) {
             if (net_dev.vendor_id == 0x8086 && (net_dev.device_id == 0x100E || net_dev.device_id == 0x100F || net_dev.device_id == 0x10D3)) {
@@ -1864,8 +1982,15 @@ void kernel_main(uint64_t multiboot_addr) {
             // 2. Hover Logic
             hover_icon = -1;
             if (!dialog_state && !window_covers_desktop && !over_window && !over_dock) {
-                if (mx >= 30 && mx <= 130 && my >= 30 && my <= 110) hover_icon = 0;
-                else if (mx >= 30 && mx <= 130 && my >= 130 && my <= 210) hover_icon = 1;
+                for (int i = 0; i < desktop_icon_count; i++) {
+                    uint32_t icon_x = 30 + (i / 5) * 120, icon_y = 30 + (i % 5) * 100, icon_w = 48, icon_h = 48;
+                    uint32_t label_w = get_string_width_scaled(desktop_icons[i].name, 65);
+                    uint32_t total_w = (label_w > icon_w) ? label_w + 20 : icon_w + 20, total_h = icon_h + 5 + 18 + 10, rect_x = icon_x + icon_w/2 - total_w/2, rect_y = icon_y - 5;
+                    if (total_w > 150) total_w = 150; if (total_h > 150) total_h = 150;
+                    if (mx >= (int32_t)rect_x && mx <= (int32_t)(rect_x + total_w) && my >= (int32_t)rect_y && my <= (int32_t)(rect_y + total_h)) {
+                        hover_icon = i; break;
+                    }
+                }
             }
 
             if (frame_clicked) {
@@ -1989,32 +2114,34 @@ void kernel_main(uint64_t multiboot_addr) {
                 if (!click_handled) {
                     if (hover_icon != -1) {
                         if (hover_icon == last_clicked_icon && (ticks - last_click_time) < 50) {
-                            int app_id = hover_icon;
-                            if (app_open_flags[app_id]) {
-                                if (active_app == app_id) {
-                                    app_minimized[app_id] = 0;
-                                    kernel_api.window_minimized = 0;
+                            int app_id = desktop_icons[hover_icon].app_id;
+                            if (app_id != -1) {
+                                if (app_open_flags[app_id]) {
+                                    if (active_app == app_id) {
+                                        app_minimized[app_id] = 0;
+                                        kernel_api.window_minimized = 0;
+                                    } else {
+                                        if (active_app >= 0) {
+                                            app_maximized[active_app] = kernel_api.window_maximized;
+                                            app_minimized[active_app] = kernel_api.window_minimized;
+                                        }
+                                        active_app = app_id;
+                                        app_minimized[app_id] = 0;
+                                        kernel_api.window_minimized = 0;
+                                        kernel_api.window_maximized = app_maximized[app_id];
+                                    }
                                 } else {
                                     if (active_app >= 0) {
                                         app_maximized[active_app] = kernel_api.window_maximized;
                                         app_minimized[active_app] = kernel_api.window_minimized;
                                     }
+                                    app_open_flags[app_id] = 1;
+                                    app_needs_init[app_id] = 1;
                                     active_app = app_id;
                                     app_minimized[app_id] = 0;
                                     kernel_api.window_minimized = 0;
                                     kernel_api.window_maximized = app_maximized[app_id];
                                 }
-                            } else {
-                                if (active_app >= 0) {
-                                    app_maximized[active_app] = kernel_api.window_maximized;
-                                    app_minimized[active_app] = kernel_api.window_minimized;
-                                }
-                                app_open_flags[app_id] = 1;
-                                app_needs_init[app_id] = 1;
-                                active_app = app_id;
-                                app_minimized[app_id] = 0;
-                                kernel_api.window_minimized = 0;
-                                kernel_api.window_maximized = app_maximized[app_id];
                             }
                         }
                         selected_icon = hover_icon; last_clicked_icon = hover_icon; last_click_time = ticks;

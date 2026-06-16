@@ -20,7 +20,7 @@ prep:
 	mkdir -p $(BUILDDIR)
 	mkdir -p $(BUILDDIR)/apps
 	mkdir -p isodir/boot/grub/themes/grub-theme
-	mkdir -p sysroot/AnimOS/apps
+	mkdir -p sysroot/Users/Admin/Desktop
 
 # Compiler
 compile:
@@ -34,9 +34,9 @@ compile:
 	$(CC) $(CFLAGS) -c $(SRCDIR)/net/net.c -o $(BUILDDIR)/net.o
 	# Build Applications
 	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -c $(SRCDIR)/applications/preferences/main.c -o $(BUILDDIR)/apps/preferences.o
-	$(LD) -m elf_x86_64 -T $(SRCDIR)/applications/linker.ld --oformat binary -o sysroot/AnimOS/apps/preferences.bin $(BUILDDIR)/apps/preferences.o
+	$(LD) -m elf_x86_64 -T $(SRCDIR)/applications/linker.ld --oformat binary -o sysroot/Users/Admin/Desktop/preferences.bin $(BUILDDIR)/apps/preferences.o
 	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -c $(SRCDIR)/applications/file_explorer/main.c -o $(BUILDDIR)/apps/file_explorer.o
-	$(LD) -m elf_x86_64 -T $(SRCDIR)/applications/linker.ld --oformat binary -o sysroot/AnimOS/apps/file_explorer.bin $(BUILDDIR)/apps/file_explorer.o
+	$(LD) -m elf_x86_64 -T $(SRCDIR)/applications/linker.ld --oformat binary -o sysroot/Users/Admin/Desktop/file_explorer.bin $(BUILDDIR)/apps/file_explorer.o
 
 # Linker
 link:
@@ -57,8 +57,10 @@ hdd.img:
 	mkfs.fat -F 32 -n "SYSROOT" hdd.img
 	mmd -i hdd.img ::/AnimOS
 	mmd -i hdd.img ::/Users
+	mmd -i hdd.img ::/Programs
 	mcopy -i hdd.img -s sysroot/AnimOS/* ::/AnimOS/
 	mcopy -i hdd.img -s sysroot/Users/* ::/Users/
+	mcopy -i hdd.img -s sysroot/Programs/* ::/Programs/
 
 # Clean
 clean:
