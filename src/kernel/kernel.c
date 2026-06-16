@@ -67,6 +67,7 @@ uint8_t* file_icon_data = 0;
 uint8_t* exe_icon_data = 0;
 uint8_t* bmp_icon_data = 0;
 uint8_t* xml_icon_data = 0;
+uint8_t* cfg_icon_data = 0;
 uint8_t* cursor_icon_data = 0;
 uint8_t* disk_icon_data = 0;
 uint8_t* back_icon_data = 0;
@@ -969,6 +970,7 @@ uint8_t* get_icon_for_file(const char* name, int is_dir) {
     }
     if (len > 4 && (memcmp_custom(name + len - 4, ".bmp", 4) == 0 || memcmp_custom(name + len - 4, ".BMP", 4) == 0)) return bmp_icon_data;
     if (len > 4 && (memcmp_custom(name + len - 4, ".xml", 4) == 0 || memcmp_custom(name + len - 4, ".XML", 4) == 0)) return xml_icon_data;
+    if (len > 4 && (memcmp_custom(name + len - 4, ".cfg", 4) == 0 || memcmp_custom(name + len - 4, ".CFG", 4) == 0)) return cfg_icon_data;
     if (len > 4 && (memcmp_custom(name + len - 4, ".cur", 4) == 0 || memcmp_custom(name + len - 4, ".ani", 4) == 0 || memcmp_custom(name + len - 4, ".CUR", 4) == 0 || memcmp_custom(name + len - 4, ".ANI", 4) == 0)) return cursor_icon_data;
     return file_icon_data;
 }
@@ -1317,6 +1319,7 @@ void init_kernel_api() {
     kernel_api.exe_icon = exe_icon_data;
     kernel_api.bmp_icon = bmp_icon_data;
     kernel_api.xml_icon = xml_icon_data;
+    kernel_api.cfg_icon = cfg_icon_data;
     kernel_api.cursor_icon = cursor_icon_data;
     kernel_api.disk_icon = disk_icon_data;
     kernel_api.back_icon = back_icon_data;
@@ -1922,6 +1925,7 @@ void kernel_main(uint64_t multiboot_addr) {
         exe_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/executable.bmp");
         bmp_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/bmp.bmp");
         xml_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/xml.bmp");
+        cfg_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/cfg.bmp");
         cursor_icon_data = load_asset("Sysroot:/AnimOS/assets/mime_types/cursor.bmp");
         disk_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/system_drive.bmp");
         back_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/back.bmp");

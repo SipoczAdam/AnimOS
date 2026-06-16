@@ -10,6 +10,7 @@ static uint8_t* file_icon = 0;
 static uint8_t* exe_icon = 0;
 static uint8_t* bmp_icon = 0;
 static uint8_t* xml_icon = 0;
+static uint8_t* cfg_icon = 0;
 static uint8_t* cursor_icon = 0;
 static uint8_t* home_icon = 0;
 static uint8_t* desktop_icon = 0;
@@ -339,6 +340,8 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
                         icon = bmp_icon; type_str = "Bitmap Image";
                     } else if (ends_with_ignore_case(name, ".xml")) {
                         icon = xml_icon; type_str = "XML Document";
+                    } else if (ends_with_ignore_case(name, ".cfg")) {
+                        icon = cfg_icon; type_str = "Configuration File";
                     } else if (ends_with_ignore_case(name, ".cur")) {
                         icon = cursor_icon; type_str = "Static Cursor";
                     } else if (ends_with_ignore_case(name, ".ani")) {
@@ -663,6 +666,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             exe_icon = api->exe_icon;
             bmp_icon = api->bmp_icon;
             xml_icon = api->xml_icon;
+            cfg_icon = api->cfg_icon;
             cursor_icon = api->cursor_icon;
             home_icon = api->home_icon;
             desktop_icon = api->desktop_icon;

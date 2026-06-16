@@ -26,8 +26,9 @@ typedef struct {
     uint8_t* file_icon;
     uint8_t* exe_icon;
     uint8_t* bmp_icon;
-    uint8_t* cursor_icon;
     uint8_t* xml_icon;
+    uint8_t* cfg_icon;
+    uint8_t* cursor_icon;
     uint8_t* disk_icon;
     uint8_t* back_icon;
     uint8_t* reload_icon;
