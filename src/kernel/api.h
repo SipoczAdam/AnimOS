@@ -32,6 +32,7 @@ typedef struct {
     uint8_t* back_icon;
     uint8_t* reload_icon;
     uint8_t* home_icon;
+    uint8_t* desktop_icon;
     uint8_t* download_icon;
     uint8_t* documents_icon;
     uint8_t* pictures_icon;

@@ -12,6 +12,7 @@ static uint8_t* bmp_icon = 0;
 static uint8_t* xml_icon = 0;
 static uint8_t* cursor_icon = 0;
 static uint8_t* home_icon = 0;
+static uint8_t* desktop_icon = 0;
 static uint8_t* download_icon = 0;
 static uint8_t* document_icon = 0;
 static uint8_t* pictures_icon = 0;
@@ -37,6 +38,7 @@ static int is_selected = 0;
 static int is_drive_opened = 0;
 
 static int hover_home = 0;
+static int hover_desktop = 0;
 static int hover_downloads = 0;
 static int hover_documents = 0;
 static int hover_pictures = 0;
@@ -247,6 +249,11 @@ static void draw_window(kernel_api_t* api, struct multiboot_tag_framebuffer* fb)
     api->draw_rect(20, sidebar_item_y, sidebar_w - 40, 1, 0xDDDDDD, fb);
     sidebar_item_y += 9;
 
+    if (hover_desktop) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
+    if (desktop_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, desktop_icon, fb);
+    api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Desktop", 0x333333, 75, fb);
+
+    sidebar_item_y += sidebar_item_h + 5;
     if (hover_downloads) api->draw_rounded_rect(10, sidebar_item_y, sidebar_w - 20, sidebar_item_h, 4, 0xEDF4FC, fb);
     if (download_icon) api->draw_icon_scaled(20, sidebar_item_y + (sidebar_item_h - 20) / 2, 20, 20, download_icon, fb);
     api->draw_string_scaled(50, sidebar_item_y + (sidebar_item_h - (18 * 75 / 100)) / 2, "Downloads", 0x333333, 75, fb);
@@ -523,6 +530,15 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
         sidebar_item_y += 36 + 8 + 9;
         if (is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36)) {
             is_drive_opened = 1;
+            strcpy_custom(current_path, "Sysroot:/Users/Admin/Desktop/");
+            refresh_file_list(api);
+            scroll_offset = 0;
+            return;
+        }
+
+        sidebar_item_y += 36 + 5;
+        if (is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36)) {
+            is_drive_opened = 1;
             strcpy_custom(current_path, "Sysroot:/Users/Admin/Downloads/");
             refresh_file_list(api);
             scroll_offset = 0;
@@ -649,6 +665,7 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             xml_icon = api->xml_icon;
             cursor_icon = api->cursor_icon;
             home_icon = api->home_icon;
+            desktop_icon = api->desktop_icon;
             download_icon = api->download_icon;
             document_icon = api->documents_icon;
             pictures_icon = api->pictures_icon;
@@ -671,6 +688,9 @@ void main(kernel_api_t* api, struct multiboot_tag_framebuffer* fb, app_event_t e
             hover_home = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
             
             sidebar_item_y += 36 + 8 + 9;
+            hover_desktop = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
+
+            sidebar_item_y += 36 + 5;
             hover_downloads = is_inside(mx, my, 10, sidebar_item_y, sidebar_w - 20, 36);
 
             sidebar_item_y += 36 + 5;

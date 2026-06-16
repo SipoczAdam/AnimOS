@@ -72,6 +72,7 @@ uint8_t* disk_icon_data = 0;
 uint8_t* back_icon_data = 0;
 uint8_t* reload_icon_data = 0;
 uint8_t* home_icon_data = 0;
+uint8_t* desktop_icon_data = 0;
 uint8_t* download_icon_data = 0;
 uint8_t* documents_icon_data = 0;
 uint8_t* pictures_icon_data = 0;
@@ -1205,6 +1206,7 @@ void init_kernel_api() {
     kernel_api.back_icon = back_icon_data;
     kernel_api.reload_icon = reload_icon_data;
     kernel_api.home_icon = home_icon_data;
+    kernel_api.desktop_icon = desktop_icon_data;
     kernel_api.download_icon = download_icon_data;
     kernel_api.documents_icon = documents_icon_data;
     kernel_api.pictures_icon = pictures_icon_data;
@@ -1809,6 +1811,7 @@ void kernel_main(uint64_t multiboot_addr) {
         back_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/back.bmp");
         reload_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/reload.bmp");
         home_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/home.bmp");
+        desktop_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/desktop.bmp");
         download_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/download.bmp");
         documents_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/documents.bmp");
         pictures_icon_data = load_asset("Sysroot:/AnimOS/assets/apps/file_explorer/pictures.bmp");
